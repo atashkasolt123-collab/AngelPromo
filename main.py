@@ -52,38 +52,31 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Основная функция запуска бота"""
-    # ТОКЕН ВАШЕГО БОТА - ЗАМЕНИТЕ ЭТОТ ТОКЕН НА СВОЙ!
-    # Получите токен у @BotFather в Telegram
+    # ТОКЕН ВАШЕГО БОТА
     TOKEN = "8115256081:AAH2Ze1oOhtTMF59FMlMza8p_80CVyx_iho"
     
-    # Пример токена (раскомментируйте и вставьте свой):
-    # TOKEN = "8115256081:AAH2Ze1oOhtTMF59FMlMza8p_80CVyx_iho"
-    
-    if TOKEN == "8115256081:AAH2Ze1oOhtTMF59FMlMza8p_80CVyx_iho":
-        print("=" * 60)
-        print("ВНИМАНИЕ: Вы не установили токен бота!")
-        print("=" * 60)
-        print("Чтобы получить токен:")
-        print("1. Найдите @BotFather в Telegram")
-        print("2. Отправьте /newbot")
-        print("3. Следуйте инструкциям")
-        print("4. Получите токен и вставьте его в строку TOKEN")
-        print("=" * 60)
+    # Простая проверка на пустой токен
+    if not TOKEN or TOKEN.strip() == "":
+        print("Ошибка: Токен бота не установлен!")
         return
     
-    # Создаем приложение
-    application = Application.builder().token(TOKEN).build()
-    
-    # Регистрируем обработчики команд
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("kurs", kurs_command))
-    application.add_handler(CommandHandler("help", help_command))
-    
-    # Запускаем бота
-    print(f"Бот запущен с токеном: {TOKEN[:10]}...")
-    print("Бот работает...")
-    print("Для остановки нажмите Ctrl+C")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        # Создаем приложение
+        application = Application.builder().token(TOKEN).build()
+        
+        # Регистрируем обработчики команд
+        application.add_handler(CommandHandler("start", start_command))
+        application.add_handler(CommandHandler("kurs", kurs_command))
+        application.add_handler(CommandHandler("help", help_command))
+        
+        # Запускаем бота
+        print(f"Бот запущен с токеном: {TOKEN[:10]}...")
+        print("Бот работает...")
+        print("Для остановки нажмите Ctrl+C")
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        
+    except Exception as e:
+        print(f"Ошибка при запуске бота: {e}")
 
 if __name__ == "__main__":
     main()
