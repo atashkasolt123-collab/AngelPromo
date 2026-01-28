@@ -1,18 +1,23 @@
 import random
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+import os
 
-# Премиум эмодзи
+# Премиум эмодзи с их ID
+# Формат: "название": ("дефолтный_эмодзи", "emoji_id")
 PREMIUM_EMOJIS = {
-    "rocket": "🛸",  # 5377336433692412420
-    "dollar": "💲",  # 5377852667286559564
-    "multiplier": "📈",  # 5201691993775818138
-    "history": "📋"  # 5353025608832004653
+    "rocket": ("🛸", "5377336433692412420"),
+    "dollar": ("💲", "5377852667286559564"),
+    "multiplier": ("📈", "5201691993775818138"),
+    "history": ("📋", "5353025608832004653")
 }
 
-def get_premium_emoji(name):
-    """Получить премиум эмодзи по имени"""
-    return PREMIUM_EMOJIS.get(name, "")
+def get_premium_emoji_html(name):
+    """Получить премиум эмодзи в HTML формате"""
+    if name in PREMIUM_EMOJIS:
+        default_emoji, emoji_id = PREMIUM_EMOJIS[name]
+        return f'<tg-emoji emoji-id="{emoji_id}">{default_emoji}</tg-emoji>'
+    return ""
 
 def generate_random_course():
     """Генерация случайного курса от 0.02 до 0.89$"""
@@ -24,38 +29,40 @@ async def kurs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Генерируем случайный курс
         random_course = generate_random_course()
         
-        # Формируем сообщение
+        # Формируем сообщение с HTML разметкой
         message = (
-            f"{get_premium_emoji('rocket')} Курс LBC {random_course}{get_premium_emoji('dollar')}\n"
-            f"{get_premium_emoji('history')} Максимальный курс: 189$ | Минимальный курс: 0.00027$"
+            f"{get_premium_emoji_html('rocket')} Курс LBC {random_course}{get_premium_emoji_html('dollar')}\n"
+            f"{get_premium_emoji_html('history')} Максимальный курс: 189$ | Минимальный курс: 0.00027$"
         )
         
-        await update.message.reply_text(message)
+        # Отправляем сообщение с parse_mode="HTML"
+        await update.message.reply_text(message, parse_mode="HTML")
     except Exception as e:
         await update.message.reply_text("Произошла ошибка при получении курса")
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
-    await update.message.reply_text(
+    message = (
         "Привет! Я бот для отслеживания курса LBC.\n"
-        "Используйте команду /kurs чтобы получить текущий курс."
+        f"{get_premium_emoji_html('rocket')} Используйте команду /kurs чтобы получить текущий курс."
     )
+    await update.message.reply_text(message, parse_mode="HTML")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /help"""
-    await update.message.reply_text(
-        "Доступные команды:\n"
+    message = (
+        f"{get_premium_emoji_html('history')} Доступные команды:\n"
         "/start - Начать работу с ботом\n"
         "/kurs - Получить текущий курс LBC\n"
         "/help - Получить справку по командам"
     )
+    await update.message.reply_text(message, parse_mode="HTML")
 
 def main():
     """Основная функция запуска бота"""
-    # ТОКЕН ВАШЕГО БОТА
-    TOKEN = "8115256081:AAH2Ze1oOhtTMF59FMlMza8p_80CVyx_iho"
+    # Получаем токен из переменной окружения или используем значение по умолчанию
+    TOKEN = os.getenv("8115256081:AAH2Ze1oOhtTMF59FMlMza8p_80CVyx_iho")
     
-    # Простая проверка на пустой токен
     if not TOKEN or TOKEN.strip() == "":
         print("Ошибка: Токен бота не установлен!")
         return
@@ -71,6 +78,7 @@ def main():
         
         # Запускаем бота
         print(f"Бот запущен с токеном: {TOKEN[:10]}...")
+        print("Используются премиум эмодзи через HTML разметку")
         print("Бот работает...")
         print("Для остановки нажмите Ctrl+C")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
