@@ -60,8 +60,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Основная функция запуска бота"""
-    # Получаем токен из переменной окружения или используем значение по умолчанию
-    TOKEN = os.getenv("8115256081:AAH2Ze1oOhtTMF59FMlMza8p_80CVyx_iho")
+    # ВАРИАНТ 1: Прямое указание токена (проще)
+    TOKEN = "8115256081:AAH2Ze1oOhtTMF59FMlMza8p_80CVyx_iho"
+    
+    # ВАРИАНТ 2: Через переменную окружения (если используете на Bothost)
+    # TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8115256081:AAH2Ze1oOhtTMF59FMlMza8p_80CVyx_iho")
     
     if not TOKEN or TOKEN.strip() == "":
         print("Ошибка: Токен бота не установлен!")
