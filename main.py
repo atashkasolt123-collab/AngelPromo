@@ -6,10 +6,15 @@ import os
 # Премиум эмодзи с их ID
 # Формат: "название": ("дефолтный_эмодзи", "emoji_id")
 PREMIUM_EMOJIS = {
-    "rocket": ("🛸", "5377336433692412420"),
-    "dollar": ("💲", "5377852667286559564"),
-    "multiplier": ("📈", "5201691993775818138"),
-    "history": ("📋", "5353025608832004653")
+    "rocket": ("🛸", "5474455093183025688"),
+    "dollar": ("💲", "5474479746295302183"),
+    "multiplier": ("📈", "5188614746072454106"),
+    "history": ("😭", "5474308110812224667"),
+    "coin": ("⭐️", "5474308110812224667"),
+    "one": ("⭐️", "5474140658627284659"),
+    "two": ("⭐️", "5474556458706178236"),
+    "three": ("⭐️", "5474687730086612122"),
+    "top": ("⭐️", "5188706250350694381")
 }
 
 def get_premium_emoji_html(name):
@@ -32,7 +37,11 @@ async def kurs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Формируем сообщение с HTML разметкой
         message = (
             f"{get_premium_emoji_html('rocket')} Курс LBC {random_course}{get_premium_emoji_html('dollar')}\n"
-            f"{get_premium_emoji_html('history')} Максимальный курс: 189$ | Минимальный курс: 0.00027$"
+            f"{get_premium_emoji_html('history')} Максимальный курс: 487.77$ | Минимальный курс: 0.00027{get_premium_emoji_html('dollar')}\n"
+            f"{get_premium_emoji_html('top')} Топ чата:\n"
+            f"{get_premium_emoji_html('one')} @qqlittle - 890{get_premium_emoji_html('history')}\n"
+            f"{get_premium_emoji_html('two')} @Dev_Pranik - 5{get_premium_emoji_html('history')}\n"
+            f"{get_premium_emoji_html('three')} ——— - 0{get_premium_emoji_html('history')}\n"
         )
         
         # Отправляем сообщение с parse_mode="HTML"
