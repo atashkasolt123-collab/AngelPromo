@@ -1,102 +1,290 @@
-import random
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
-import os
+import asyncio
+import logging
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.filters import Command
+from aiogram.enums import ParseMode
+from aiogram.client.default import DefaultBotProperties
+from decimal import Decimal, ROUND_HALF_UP
 
-# Премиум эмодзи с их ID
-# Формат: "название": ("дефолтный_эмодзи", "emoji_id")
-PREMIUM_EMOJIS = {
-    "rocket": ("🛸", "5474455093183025688"),
-    "dollar": ("💲", "5474479746295302183"),
-    "multiplier": ("📈", "5188614746072454106"),
-    "history": ("😭", "5474308110812224667"),
-    "coin": ("⭐️", "5474308110812224667"),
-    "one": ("⭐️", "5474140658627284659"),
-    "two": ("⭐️", "5474556458706178236"),
-    "three": ("⭐️", "5474687730086612122"),
-    "top": ("⭐️", "5188706250350694381")
+# ==================== КОНФИГУРАЦИЯ ====================
+TOKEN = "8488987410:AAFQDM7jUEVOwcAtwYwjSWBEKm3CDOxrbHM"
+
+ADMIN_IDS = [7313407194, 5877542500]
+
+CRYPTOBOT_LINK = "http://t.me/send?start=IVjPbr6PN7s6"
+
+USD_RUB_RATE = 74
+
+# ==================== 5 РАБОЧИХ ПРЕМИУМ ЭМОДЗИ ====================
+PREMIUM = {
+    "rocket": '<tg-emoji emoji-id="5377336433692412420">🚀</tg-emoji>',
+    "dice": '<tg-emoji emoji-id="5377346496800786271">🎯</tg-emoji>',
+    "lightning": '<tg-emoji emoji-id="5375469677696815127">⚡</tg-emoji>',
+    "win": '<tg-emoji emoji-id="5436386989857320953">🏆</tg-emoji>',
+    "check": '<tg-emoji emoji-id="5377720025811555309">✅</tg-emoji>',
 }
 
-def get_premium_emoji_html(name):
-    """Получить премиум эмодзи в HTML формате"""
-    if name in PREMIUM_EMOJIS:
-        default_emoji, emoji_id = PREMIUM_EMOJIS[name]
-        return f'<tg-emoji emoji-id="{emoji_id}">{default_emoji}</tg-emoji>'
-    return ""
+def emj(name):
+    """Возвращает премиум эмодзи"""
+    return PREMIUM.get(name, '•')
 
-def generate_random_course():
-    """Генерация случайного курса от 0.02 до 0.89$"""
-    return round(random.uniform(0.02, 0.89), 5)
+# ==================== УСЛУГИ ====================
+SERVICES = {
+    "15": {
+        "name": "Премиум Буст канала 15 Д",
+        "desc": (
+            f"{emj('win')} Буст 15 дней\n"
+            f"{emj('lightning')} Моментальные\n"
+            f"{emj('dice')} Время: от 10 мин. до 5 ч.\n"
+            f"{emj('win')} Качество: Премиум\n"
+            f"{emj('rocket')} Гео: Весь мир\n"
+            f"{emj('check')} С гарантией"
+        ),
+        "price": 20699.0,
+        "min": 10,
+        "max": 100000,
+        "step": 10,
+    },
+    "1": {
+        "name": "Буст канала 1 день",
+        "desc": (
+            f"{emj('lightning')} Быстро\n"
+            f"{emj('dice')} Время: от 10 мин. до 5 ч.\n"
+            f"{emj('win')} Качество: Премиум"
+        ),
+        "price": 3285.48,
+        "min": 10,
+        "max": 100000,
+        "step": 10,
+    },
+    "30": {
+        "name": "Буст канала 30 дней",
+        "desc": (
+            f"{emj('win')} Премиум Подписчики\n"
+            f"{emj('lightning')} Моментальные\n"
+            f"{emj('dice')} Время: от 10 мин. до 5 ч.\n"
+            f"{emj('check')} Гарантия 30 дн."
+        ),
+        "price": 36896.0,
+        "min": 10,
+        "max": 100000,
+        "step": 10,
+    },
+    "complaints": {
+        "name": "Насилие жалобы",
+        "desc": (
+            f"{emj('rocket')} Жалобы на канал/группу\n"
+            f"{emj('dice')} Причина: Насилие\n"
+            f"{emj('lightning')} Быстрый старт\n"
+            f"{emj('dice')} Время: от 10 мин. до 5 ч.\n"
+            f"{emj('win')} Скорость до 10к/сутки"
+        ),
+        "price": 11361.6,
+        "min": 200,
+        "max": 40000,
+        "step": 10,
+    }
+}
 
-async def kurs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /kurs"""
-    try:
-        # Генерируем случайный курс
-        random_course = generate_random_course()
-        
-        # Формируем сообщение с HTML разметкой
-        message = (
-            f"{get_premium_emoji_html('rocket')} Курс LBC {random_course}{get_premium_emoji_html('dollar')}\n"
-            f"{get_premium_emoji_html('history')} Максимальный курс: 487.77$ | Минимальный курс: 0.00027{get_premium_emoji_html('dollar')}\n"
-            f"{get_premium_emoji_html('top')} Топ чата:\n"
-            f"{get_premium_emoji_html('one')} @qqlittle - 890{get_premium_emoji_html('history')}\n"
-            f"{get_premium_emoji_html('two')} @Dev_Pranik - 5{get_premium_emoji_html('history')}\n"
-            f"{get_premium_emoji_html('three')} ——— - 0{get_premium_emoji_html('history')}\n"
+# ==================== ХРАНИЛИЩЕ ====================
+user_service = {}
+orders = {}
+order_counter = 0
+
+# ==================== ИНИЦИАЛИЗАЦИЯ ====================
+bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+dp = Dispatcher()
+
+# ==================== КНОПКИ - БЕЗ ЭМОДЗИ! ====================
+def menu_kb():
+    kb = [
+        [KeyboardButton(text="Буст 15 дней")],
+        [KeyboardButton(text="Буст 1 день"), KeyboardButton(text="Буст 30 дней")],
+        [KeyboardButton(text="Жалобы")],
+        [KeyboardButton(text="Поддержка")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+def back_kb():
+    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="◀ Назад")]], resize_keyboard=True)
+
+# ==================== ФУНКЦИИ ====================
+def rub_to_usd(rub):
+    return (Decimal(str(rub)) / Decimal(str(USD_RUB_RATE))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+def fmt_price(p):
+    return f"{int(p)}" if p == int(p) else f"{p:.2f}".rstrip('0').rstrip('.')
+
+def calc_price(service, qty):
+    total = (service["price"] / 1000) * qty
+    return fmt_price(total), f"{rub_to_usd(total)}"
+
+# ==================== ОБРАБОТЧИКИ ====================
+@dp.message(Command("start"))
+async def cmd_start(msg: Message):
+    """СТАРТ - ПРЕМИУМ ЭМОДЗИ ТОЛЬКО В ТЕКСТЕ!"""
+    text = (
+        f"{emj('win')} <b>Premium Boost Bot</b> {emj('win')}\n\n"
+        f"{emj('rocket')} Бусты и жалобы\n"
+        f"{emj('lightning')} Моментально • {emj('check')} С гарантией\n\n"
+        f"{emj('dice')} Выбери услугу:"
+    )
+    await msg.answer(text, reply_markup=menu_kb())
+
+@dp.message(lambda m: m.text == "Поддержка")
+async def support(msg: Message):
+    text = (
+        f"{emj('rocket')} <b>Поддержка</b>\n\n"
+        f"@TsideEnjoyer\n"
+        f"{emj('dice')} 5-30 мин"
+    )
+    await msg.answer(text, reply_markup=menu_kb())
+
+@dp.message(lambda m: m.text == "◀ Назад")
+async def back(msg: Message):
+    if msg.from_user.id in user_service:
+        del user_service[msg.from_user.id]
+    await cmd_start(msg)
+
+@dp.message(lambda m: m.text in ["Буст 15 дней", "Буст 1 день", "Буст 30 дней", "Жалобы"])
+async def service_select(msg: Message):
+    key = {
+        "Буст 15 дней": "15",
+        "Буст 1 день": "1",
+        "Буст 30 дней": "30", 
+        "Жалобы": "complaints"
+    }[msg.text]
+    
+    service = SERVICES[key]
+    user_service[msg.from_user.id] = key
+    
+    min_rub, min_usd = calc_price(service, service["min"])
+    
+    text = (
+        f"<b>{emj('rocket')} {service['name']}</b>\n"
+        f"{service['desc']}\n\n"
+        f"{emj('dice')} <i>Данные могут быть неточны</i>\n\n"
+        f"{emj('win')} <b>1000:</b> {fmt_price(service['price'])} ₽\n"
+        f"{emj('dice')} <b>Мин:</b> {service['min']} | <b>Макс:</b> {service['max']}\n"
+        f"{emj('rocket')} <b>{service['min']}:</b> {min_rub} ₽ | {min_usd} $\n\n"
+        f"{emj('lightning')} <b>Введите количество (кратно {service['step']}):</b>"
+    )
+    await msg.answer(text, reply_markup=back_kb())
+
+@dp.message()
+async def process_qty(msg: Message):
+    global order_counter
+    
+    if msg.text in ["Буст 15 дней", "Буст 1 день", "Буст 30 дней", "Жалобы", "Поддержка", "◀ Назад"]:
+        return
+    
+    if msg.from_user.id not in user_service:
+        await msg.answer(
+            f"{emj('dice')} Сначала выбери услугу!",
+            reply_markup=menu_kb()
         )
-        
-        # Отправляем сообщение с parse_mode="HTML"
-        await update.message.reply_text(message, parse_mode="HTML")
-    except Exception as e:
-        await update.message.reply_text("Произошла ошибка при получении курса")
-
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /start"""
-    message = (
-        "Привет! Я бот для отслеживания курса LBC.\n"
-        f"{get_premium_emoji_html('rocket')} Используйте команду /kurs чтобы получить текущий курс."
-    )
-    await update.message.reply_text(message, parse_mode="HTML")
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /help"""
-    message = (
-        f"{get_premium_emoji_html('history')} Доступные команды:\n"
-        "/start - Начать работу с ботом\n"
-        "/kurs - Получить текущий курс LBC\n"
-        "/help - Получить справку по командам"
-    )
-    await update.message.reply_text(message, parse_mode="HTML")
-
-def main():
-    """Основная функция запуска бота"""
-    # ВАРИАНТ 1: Прямое указание токена (проще)
-    TOKEN = "8115256081:AAH2Ze1oOhtTMF59FMlMza8p_80CVyx_iho"
-    
-    # ВАРИАНТ 2: Через переменную окружения (если используете на Bothost)
-    # TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8115256081:AAH2Ze1oOhtTMF59FMlMza8p_80CVyx_iho")
-    
-    if not TOKEN or TOKEN.strip() == "":
-        print("Ошибка: Токен бота не установлен!")
         return
     
     try:
-        # Создаем приложение
-        application = Application.builder().token(TOKEN).build()
+        qty = int(''.join(filter(str.isdigit, msg.text)))
+        key = user_service[msg.from_user.id]
+        service = SERVICES[key]
         
-        # Регистрируем обработчики команд
-        application.add_handler(CommandHandler("start", start_command))
-        application.add_handler(CommandHandler("kurs", kurs_command))
-        application.add_handler(CommandHandler("help", help_command))
+        if qty < service["min"]:
+            await msg.answer(f"{emj('dice')} Минимум: {service['min']}!")
+            return
+        if qty > service["max"]:
+            await msg.answer(f"{emj('dice')} Максимум: {service['max']}!")
+            return
+        if qty % service["step"] != 0:
+            await msg.answer(f"{emj('dice')} Кратно {service['step']}!")
+            return
         
-        # Запускаем бота
-        print(f"Бот запущен с токеном: {TOKEN[:10]}...")
-        print("Используются премиум эмодзи через HTML разметку")
-        print("Бот работает...")
-        print("Для остановки нажмите Ctrl+C")
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        rub, usd = calc_price(service, qty)
+        order_counter += 1
+        oid = f"#{order_counter}"
         
-    except Exception as e:
-        print(f"Ошибка при запуске бота: {e}")
+        orders[oid] = {
+            "user_id": msg.from_user.id,
+            "username": msg.from_user.username or msg.from_user.full_name,
+            "service": service['name'],
+            "qty": qty,
+            "rub": rub,
+            "usd": usd
+        }
+        
+        order_text = (
+            f"{emj('win')} <b>ЗАКАЗ {oid}</b> {emj('win')}\n"
+            f"{'─' * 30}\n\n"
+            f"<b>{emj('rocket')} {service['name']}</b>\n"
+            f"{emj('lightning')} Моментальные\n"
+            f"{emj('dice')} Время: от 10 мин. до 5 ч.\n"
+            f"{emj('rocket')} <b>Кол-во:</b> {qty}\n"
+            f"{emj('win')} <b>Сумма:</b> {rub} ₽ | {usd} $\n\n"
+            f"{emj('lightning')} <b>Ссылка:</b>\n"
+            f"<code>вставь ссылку на канал</code>\n\n"
+            f"{emj('rocket')} <b>Оплата:</b>"
+        )
+        
+        # Inline кнопки - БЕЗ ПРЕМИУМ ЭМОДЗИ В ТЕКСТЕ КНОПОК!
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"💳 Оплатить {usd}$ CryptoBot", url=CRYPTOBOT_LINK)],
+            [InlineKeyboardButton(text="✅ Я оплатил", callback_data=f"pay_{oid}")]
+        ])
+        
+        await msg.answer(order_text, reply_markup=keyboard)
+        
+        for admin in ADMIN_IDS:
+            try:
+                admin_text = (
+                    f"{emj('dice')} <b>НОВЫЙ ЗАКАЗ!</b>\n\n"
+                    f"{emj('rocket')} <b>{oid}</b>\n"
+                    f"{emj('win')} {service['name']}\n"
+                    f"{emj('dice')} {qty} шт.\n"
+                    f"{emj('win')} {rub} ₽ | {usd} $\n"
+                    f"{emj('rocket')} @{msg.from_user.username if msg.from_user.username else 'no_username'}\n"
+                    f"ID: <code>{msg.from_user.id}</code>"
+                )
+                await bot.send_message(admin, admin_text)
+            except:
+                pass
+        
+    except ValueError:
+        await msg.answer(f"{emj('dice')} Введи число!")
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('pay_'))
+async def payment(c: CallbackQuery):
+    oid = c.data.replace('pay_', '')
+    if oid not in orders:
+        await c.answer("❌ Заказ не найден!", show_alert=True)
+        return
+    
+    confirm_text = (
+        f"{emj('check')} <b>Заказ {oid} отправлен!</b>\n\n"
+        f"{emj('dice')} Проверка: 5-10 мин\n"
+        f"{emj('rocket')} @TsideEnjoyer\n\n"
+        f"{emj('win')} Спасибо за заказ!"
+    )
+    
+    await c.message.edit_text(confirm_text)
+    await c.answer("✅ Отправлено!")
+
+async def main():
+    print("=" * 50)
+    print("🚀 БОТ ЗАПУЩЕН!")
+    print("=" * 50)
+    print("✅ КНОПКИ - БЕЗ ЭМОДЗИ!")
+    print("✅ ПРЕМИУМ ЭМОДЗИ - ТОЛЬКО В ТЕКСТЕ!")
+    print("✅ 5 РАБОЧИХ ПРЕМИУМ ЭМОДЗИ:")
+    print("   🚀 rocket - Бусты, ссылки, оплата")
+    print("   🎯 dice - Жалобы, числа, предупреждения") 
+    print("   ⚡ lightning - Скорость, время")
+    print("   🏆 win - Услуги, цены, успех")
+    print("   ✅ check - Гарантия, подтверждение")
+    print("=" * 50)
+    
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
