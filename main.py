@@ -19,9 +19,9 @@ from aiogram.enums import ParseMode, DiceEmoji
 import aiohttp
 
 # ==================== ТОКЕНЫ ====================
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8216893084:AAFDDMLxgAJy-b5PlyM4fX250w03DH7ioE4")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8216893084:AAG9xd5IgFhE4wz0HgEA_dYzHU7PeQH-2hY")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "7313407194"))
-CRYPTOPAY_TOKEN = os.getenv("CRYPTOPAY_TOKEN", "531599:AAUMC694mv1R74W7olhV1Z1QpNGymqIXyVo")
+CRYPTOPAY_TOKEN = os.getenv("CRYPTOPAY_TOKEN", "531599:AA05JiziAQmfqkmjjfrez3kzMpLD9pTgj4J")
 
 # ==================== ПРЕМИУМ ЭМОДЗИ ====================
 PREMIUM_EMOJIS = {
