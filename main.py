@@ -617,10 +617,12 @@ async def on_startup():
 @dp.message(F.text)
 async def auto_change_bet(message: Message):
     """Автоматическое изменение ставки при вводе числа с $ в конце"""
+    
+    # ⚠️ ВАЖНО: Пропускаем команды (начинаются с /)
+    if message.text.startswith('/'):
+        return  # Не обрабатываем команды, они уйдут в другие хендлеры
+    
     try:
-        if not message.text:
-            return
-        
         text = message.text.strip()
         
         # Проверяем, что сообщение заканчивается на $
@@ -657,7 +659,6 @@ async def auto_change_bet(message: Message):
     except Exception:
         # Игнорируем все ошибки
         pass
-
 
 # ==================== КОМАНДЫ ====================
 @dp.message(CommandStart())
