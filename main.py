@@ -51,6 +51,8 @@ class Database:
             "amount": random.uniform(700, 790),
             "updated": datetime.now()
         }
+        # Для быстрых конкурсов
+        self.fast_contests = {}
 
     def get_connection(self):
         return sqlite3.connect(self.db_name)
@@ -86,6 +88,8 @@ class Database:
                     check_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER,
                     amount REAL,
+                    uses INTEGER DEFAULT 1,
+                    uses_left INTEGER DEFAULT 1,
                     check_data TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -246,12 +250,12 @@ class Database:
             )
             conn.commit()
 
-    def save_check(self, user_id: int, amount: float, check_data: str) -> int:
+    def save_check(self, user_id: int, amount: float, uses: int, check_data: str) -> int:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO checks (user_id, amount, check_data) VALUES (?, ?, ?) RETURNING check_id",
-                (user_id, amount, check_data)
+                "INSERT INTO checks (user_id, amount, uses, uses_left, check_data) VALUES (?, ?, ?, ?, ?) RETURNING check_id",
+                (user_id, amount, uses, uses, check_data)
             )
             result = cursor.fetchone()
             conn.commit()
@@ -262,16 +266,37 @@ class Database:
             cursor = conn.cursor()
             if user_id:
                 cursor.execute(
-                    "SELECT check_id, amount, check_data, created_at FROM checks WHERE user_id = ? ORDER BY created_at DESC",
+                    "SELECT check_id, amount, uses, uses_left, check_data, created_at FROM checks WHERE user_id = ? ORDER BY created_at DESC",
                     (user_id,)
                 )
             else:
-                cursor.execute("SELECT check_id, user_id, amount, check_data, created_at FROM checks ORDER BY created_at DESC")
+                cursor.execute("SELECT check_id, user_id, amount, uses, uses_left, check_data, created_at FROM checks ORDER BY created_at DESC")
             rows = cursor.fetchall()
             if user_id:
-                return [{"id": r[0], "amount": r[1], "data": r[2], "created_at": r[3]} for r in rows]
+                return [{"id": r[0], "amount": r[1], "uses": r[2], "uses_left": r[3], "data": r[4], "created_at": r[5]} for r in rows]
             else:
-                return [{"id": r[0], "user_id": r[1], "amount": r[2], "data": r[3], "created_at": r[4]} for r in rows]
+                return [{"id": r[0], "user_id": r[1], "amount": r[2], "uses": r[3], "uses_left": r[4], "data": r[5], "created_at": r[6]} for r in rows]
+
+    def use_check(self, check_data: str) -> Optional[Dict]:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT check_id, user_id, amount, uses_left FROM checks WHERE check_data = ? AND uses_left > 0",
+                (check_data,)
+            )
+            row = cursor.fetchone()
+            if row:
+                check_id, owner_id, amount, uses_left = row
+                if uses_left > 1:
+                    cursor.execute(
+                        "UPDATE checks SET uses_left = uses_left - 1 WHERE check_id = ?",
+                        (check_id,)
+                    )
+                else:
+                    cursor.execute("DELETE FROM checks WHERE check_id = ?", (check_id,))
+                conn.commit()
+                return {"owner_id": owner_id, "amount": amount}
+            return None
 
     def save_payment_request(self, user_id: int, amount: float, type: str) -> int:
         with self.get_connection() as conn:
@@ -382,6 +407,7 @@ class AdminStates(StatesGroup):
     waiting_for_message = State()
     waiting_for_payment_id = State()
     waiting_for_payment_amount = State()
+    waiting_for_fast_amount = State()
 
 class BetChangeStates(StatesGroup):
     waiting_for_new_bet = State()
@@ -392,6 +418,7 @@ class PayStates(StatesGroup):
 
 class CheckStates(StatesGroup):
     waiting_for_amount = State()
+    waiting_for_uses = State()
 
 # ==================== INLINE КНОПКИ ====================
 def get_start_buttons():
@@ -491,7 +518,13 @@ def get_admin_buttons():
         [InlineKeyboardButton(text="3️⃣ РАССЫЛКА", callback_data="admin_broadcast")],
         [InlineKeyboardButton(text="4️⃣ ЗАПРОСЫ ВЫВОДА", callback_data="admin_withdraws")],
         [InlineKeyboardButton(text="5️⃣ ЧЕКИ", callback_data="admin_checks")],
+        [InlineKeyboardButton(text="6️⃣ БЫСТРЫЙ КОНКУРС", callback_data="admin_fast")],
         [InlineKeyboardButton(text="🏠 ГЛАВНОЕ МЕНЮ", callback_data="menu_main")]
+    ])
+
+def get_fast_participate_button(contest_id: str):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎲 УЧАСТВОВАТЬ", callback_data=f"fast_join_{contest_id}")]
     ])
 
 def get_back_buttons():
@@ -581,6 +614,35 @@ async def on_startup():
         print(f"❌ Ошибка при запуске: {e}")
         raise e
 
+# ==================== АВТОМАТИЧЕСКОЕ ИЗМЕНЕНИЕ СТАВКИ ====================
+@dp.message(F.text.regexp(r'^\d+[\.,]?\d*\$?$').as_("amount_text"))
+async def auto_change_bet(message: Message):
+    """Автоматическое изменение ставки при вводе числа в чат"""
+    try:
+        # Очищаем текст от символа $ и заменяем запятую на точку
+        text = message.text.replace("$", "").replace(",", ".").strip()
+        new_bet = float(text)
+        
+        if new_bet <= 0:
+            await message.answer(f"{premium('dollar')} Ставка должна быть больше 0")
+            return
+        
+        if new_bet < 0.1:
+            await message.answer(f"{premium('dollar')} Минимальная ставка 0.1$")
+            return
+        
+        # Сохраняем новую ставку
+        db.set_bet(message.from_user.id, new_bet)
+        
+        await message.answer(
+            f"{premium('transfer')} <b>СТАВКА ИЗМЕНЕНА</b>\n\n"
+            f"{premium('dollar')} Новая ставка: {new_bet:.2f}$",
+            reply_markup=get_main_menu_button()
+        )
+    except ValueError:
+        # Если не удалось преобразовать в число - игнорируем
+        pass
+
 # ==================== КОМАНДЫ ====================
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
@@ -610,7 +672,7 @@ async def cmd_help(message: Message):
         f"• /top - топ игроков\n"
         f"• /reserve - резерв бота\n"
         f"• /activate КОД - активировать чек\n"
-        f"• /help - эта справка\n"
+        f"• /help - эта справка\n\n"
         f"<b>💳 ВЫВОДЫ:</b>\n"
         f"Выводы через администратора {WITHDRAW_ADMIN}\n"
         f"После запроса напишите администратору\n\n"
@@ -749,6 +811,139 @@ async def pay_amount(message: Message, state: FSMContext):
     except:
         await message.answer(f"{premium('dollar')} Введи корректную сумму")
 
+# ==================== БЫСТРЫЙ КОНКУРС (ТОЛЬКО ДЛЯ АДМИНА) ====================
+@dp.message(Command("fast"))
+async def cmd_fast(message: Message, state: FSMContext):
+    """Быстрый конкурс (только для админа)"""
+    user = db.get_user(message.from_user.id)
+    if not user or not user.get("is_admin"):
+        await message.answer(f"{premium('dollar')} НЕТ ПРАВ!")
+        return
+    
+    args = message.text.split()
+    if len(args) != 2:
+        await message.answer(
+            f"{premium('dollar')} <b>ИСПОЛЬЗУЙ:</b> /fast СУММА\n\n"
+            f"Пример: /fast 10"
+        )
+        return
+    
+    try:
+        amount = float(args[1].replace("$", ""))
+        if amount < 0.1:
+            await message.answer(f"{premium('dollar')} Минимальная сумма 0.1$")
+            return
+        
+        # Создаем конкурс
+        contest_id = f"fast_{datetime.now().timestamp()}"
+        db.fast_contests[contest_id] = {
+            "amount": amount,
+            "participants": [],
+            "active": True,
+            "created_by": message.from_user.id
+        }
+        
+        # Отправляем сообщение о конкурсе
+        contest_text = (
+            f"{premium('dollar')} <b>БЫСТРЫЙ КОНКУРС</b> {premium('dollar')}\n\n"
+            f"💰 <b>ПРИЗОВОЙ ФОНД:</b> {amount} {premium('dollar')}\n"
+            f"🎲 <b>УЧАСТНИКОВ:</b> 0/6\n\n"
+            f"<b>УЧАСТНИКИ:</b>\n"
+        )
+        
+        await message.answer(
+            contest_text,
+            reply_markup=get_fast_participate_button(contest_id)
+        )
+        
+    except ValueError:
+        await message.answer(f"{premium('dollar')} Введи корректную сумму")
+
+@dp.callback_query(F.data.startswith("fast_join_"))
+async def fast_join(callback: CallbackQuery):
+    """Участие в быстром конкурсе"""
+    contest_id = callback.data.replace("fast_join_", "")
+    
+    if contest_id not in db.fast_contests:
+        await callback.answer("❌ КОНКУРС НЕ НАЙДЕН!", show_alert=True)
+        return
+    
+    contest = db.fast_contests[contest_id]
+    
+    if not contest["active"]:
+        await callback.answer("❌ КОНКУРС УЖЕ ЗАВЕРШЕН!", show_alert=True)
+        return
+    
+    # Проверяем, не участвует ли уже пользователь
+    user_id = callback.from_user.id
+    if any(p["id"] == user_id for p in contest["participants"]):
+        await callback.answer("✅ ВЫ УЖЕ УЧАСТВУЕТЕ!", show_alert=True)
+        return
+    
+    # Проверяем, не набрано ли уже 6 участников
+    if len(contest["participants"]) >= 6:
+        await callback.answer("❌ ВСЕ МЕСТА ЗАНЯТЫ!", show_alert=True)
+        return
+    
+    # Добавляем участника
+    user = callback.from_user
+    contest["participants"].append({
+        "id": user_id,
+        "name": user.username or user.first_name or f"ID{user_id}"
+    })
+    
+    # Обновляем сообщение
+    contest_text = (
+        f"{premium('dollar')} <b>БЫСТРЫЙ КОНКУРС</b> {premium('dollar')}\n\n"
+        f"💰 <b>ПРИЗОВОЙ ФОНД:</b> {contest['amount']} {premium('dollar')}\n"
+        f"🎲 <b>УЧАСТНИКОВ:</b> {len(contest['participants'])}/6\n\n"
+        f"<b>УЧАСТНИКИ:</b>\n"
+    )
+    
+    for i, p in enumerate(contest["participants"], 1):
+        contest_text += f"{i}. {p['name']}\n"
+    
+    # Если набрали 6 участников - проводим розыгрыш
+    if len(contest["participants"]) == 6:
+        contest["active"] = False
+        
+        # Кидаем куб
+        msg = await bot.send_dice(callback.message.chat.id, emoji=DiceEmoji.DICE)
+        dice_value = msg.dice.value
+        
+        # Определяем победителя (1-6)
+        winner_index = dice_value  # Значение куба от 1 до 6
+        winner = contest["participants"][winner_index - 1]
+        
+        # Начисляем приз
+        db.update_balance(winner["id"], contest["amount"])
+        
+        contest_text += f"\n{premium('dice')} <b>ВЫПАЛО: {dice_value}</b>\n"
+        contest_text += f"{premium('balance')} <b>ПОБЕДИТЕЛЬ: {winner['name']}</b>\n"
+        contest_text += f"{premium('dollar')} <b>ВЫИГРЫШ: +{contest['amount']}$</b>"
+        
+        await callback.message.edit_text(contest_text)
+        
+        # Уведомляем победителя
+        try:
+            await bot.send_message(
+                winner["id"],
+                f"{premium('balance')} <b>ВЫ ПОБЕДИЛИ В КОНКУРСЕ!</b>\n\n"
+                f"💰 ВЫИГРЫШ: +{contest['amount']} {premium('dollar')}"
+            )
+        except:
+            pass
+        
+        # Удаляем конкурс
+        del db.fast_contests[contest_id]
+    else:
+        await callback.message.edit_text(
+            contest_text,
+            reply_markup=get_fast_participate_button(contest_id)
+        )
+    
+    await callback.answer()
+
 # ==================== АКТИВАЦИЯ ЧЕКА ====================
 @dp.message(Command("activate"))
 async def cmd_activate(message: Message):
@@ -765,34 +960,16 @@ async def cmd_activate(message: Message):
     check_code = args[1].strip()
     uid = message.from_user.id
     
-    # Ищем чек в базе
-    checks = db.get_checks()
-    check = None
-    
-    for c in checks:
-        if c["data"] == check_code:
-            check = c
-            break
+    # Активируем чек
+    check = db.use_check(check_code)
     
     if not check:
-        await message.answer(f"{premium('dollar')} <b>ЧЕК НЕ НАЙДЕН</b>\n\nПроверь правильность кода")
+        await message.answer(f"{premium('dollar')} <b>ЧЕК НЕ НАЙДЕН ИЛИ УЖЕ ИСПОЛЬЗОВАН</b>")
         return
     
-    # Проверяем, не пытается ли владелец активировать свой чек
-    if check["user_id"] == uid:
-        await message.answer(f"{premium('dollar')} <b>НЕЛЬЗЯ АКТИВИРОВАТЬ СВОЙ ЧЕК</b>")
-        return
-    
-    # Активируем чек
+    # Начисляем средства
     db.update_balance(uid, check["amount"])
     
-    # Удаляем чек из базы
-    with sqlite3.connect(db.db_name) as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM checks WHERE check_id = ?", (check["id"],))
-        conn.commit()
-    
-    # Уведомляем получателя
     await message.answer(
         f"{premium('balance')} <b>ЧЕК АКТИВИРОВАН!</b>\n\n"
         f"💰 СУММА: +{check['amount']} {premium('dollar')}\n"
@@ -802,7 +979,7 @@ async def cmd_activate(message: Message):
     # Уведомляем отправителя
     try:
         await bot.send_message(
-            check["user_id"],
+            check["owner_id"],
             f"{premium('balance')} <b>ЧЕК АКТИВИРОВАН</b>\n\n"
             f"💰 Ваш чек на {check['amount']} {premium('dollar')} был активирован"
         )
@@ -919,7 +1096,7 @@ async def check_create(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         f"{premium('balance')} <b>СОЗДАНИЕ ЧЕКА</b>\n\n"
         f"{premium('balance')} БАЛАНС: {db.get_balance(callback.from_user.id):.2f} {premium('dollar')}\n"
-        f"💰 МИНИМУМ: 1$\n\n"
+        f"💰 МИНИМУМ: 0.1$\n\n"
         f"📝 ВВЕДИ СУММУ ЧЕКА:",
         reply_markup=get_main_menu_button()
     )
@@ -932,28 +1109,67 @@ async def check_amount(message: Message, state: FSMContext):
         uid = message.from_user.id
         bal = db.get_balance(uid)
         
-        if amount < 1:
-            await message.answer(f"{premium('dollar')} МИНИМУМ 1$")
+        if amount < 0.1:
+            await message.answer(f"{premium('dollar')} МИНИМУМ 0.1$")
             return
         if amount > bal:
             await message.answer(f"{premium('dollar')} НЕДОСТАТОЧНО СРЕДСТВ")
             return
         
-        # Создаем чек
-        check_data = f"CHECK{uid}{random.randint(1000, 9999)}"
-        check_id = db.save_check(uid, amount, check_data)
-        
-        # Списываем средства
-        db.update_balance(uid, -amount)
-        
+        await state.update_data(amount=amount)
+        await state.set_state(CheckStates.waiting_for_uses)
         await message.answer(
-            f"{premium('balance')} <b>ЧЕК СОЗДАН!</b>\n\n"
-            f"💰 СУММА: {amount} {premium('dollar')}\n"
-            f"📋 НОМЕР: #{check_id}\n"
-            f"🔑 КОД: <code>{check_data}</code>\n\n"
-            f"📤 Отправьте код получателю",
+            f"{premium('balance')} <b>КОЛИЧЕСТВО АКТИВАЦИЙ</b>\n\n"
+            f"💰 СУММА ЧЕКА: {amount} {premium('dollar')}\n"
+            f"📝 ВВЕДИ КОЛИЧЕСТВО АКТИВАЦИЙ (например: 1, 5, 100):",
             reply_markup=get_main_menu_button()
         )
+    except ValueError:
+        await message.answer(f"{premium('dollar')} ВВЕДИ ЧИСЛО")
+
+@dp.message(CheckStates.waiting_for_uses)
+async def check_uses(message: Message, state: FSMContext):
+    try:
+        uses = int(message.text)
+        if uses < 1:
+            await message.answer(f"{premium('dollar')} Минимум 1 активация")
+            return
+        
+        data = await state.get_data()
+        amount = data["amount"]
+        uid = message.from_user.id
+        
+        # Списываем средства (amount * uses)
+        total_cost = amount * uses
+        db.update_balance(uid, -total_cost)
+        
+        # Создаем чеки
+        check_codes = []
+        for i in range(uses):
+            check_data = f"CHECK{uid}{random.randint(1000, 9999)}{i}"
+            check_id = db.save_check(uid, amount, 1, check_data)
+            check_codes.append(check_data)
+        
+        if uses == 1:
+            await message.answer(
+                f"{premium('balance')} <b>ЧЕК СОЗДАН!</b>\n\n"
+                f"💰 СУММА: {amount} {premium('dollar')}\n"
+                f"📋 КОЛИЧЕСТВО: 1\n"
+                f"🔑 КОД: <code>{check_codes[0]}</code>\n\n"
+                f"📤 Отправьте код получателю",
+                reply_markup=get_main_menu_button()
+            )
+        else:
+            text = f"{premium('balance')} <b>ЧЕКИ СОЗДАНЫ!</b>\n\n"
+            text += f"💰 СУММА КАЖДОГО: {amount} {premium('dollar')}\n"
+            text += f"📋 КОЛИЧЕСТВО: {uses}\n"
+            text += f"💵 ОБЩАЯ СУММА: {total_cost} {premium('dollar')}\n\n"
+            text += f"<b>КОДЫ ЧЕКОВ:</b>\n"
+            for i, code in enumerate(check_codes, 1):
+                text += f"{i}. <code>{code}</code>\n"
+            
+            await message.answer(text, reply_markup=get_main_menu_button())
+        
         await state.clear()
         
     except ValueError:
@@ -973,7 +1189,7 @@ async def check_list(callback: CallbackQuery):
     
     text = f"{premium('balance')} <b>ВАШИ ЧЕКИ</b>\n\n"
     for c in checks:
-        text += f"#{c['id']} | {c['amount']} {premium('dollar')} | {c['created_at'][:10]}\n"
+        text += f"#{c['id']} | {c['amount']} {premium('dollar')} | {c['uses_left']}/{c['uses']} | {c['created_at'][:10]}\n"
     
     await callback.message.edit_text(text, reply_markup=get_main_menu_button())
     await callback.answer()
@@ -1038,7 +1254,7 @@ async def mines_menu(callback: CallbackQuery):
         f"📊 МНОЖИТЕЛИ ДО x282\n\n"
         f"👇 НАЧНИ ИГРУ:",
         reply_markup=get_mines_menu_buttons()
-    )
+    
     await callback.answer()
 
 @dp.callback_query(F.data == "mines_start")
@@ -1199,6 +1415,9 @@ async def new_bet(message: Message, state: FSMContext):
         if bet <= 0:
             await message.answer(f"{premium('dollar')} СТАВКА ДОЛЖНА БЫТЬ > 0")
             return
+        if bet < 0.1:
+            await message.answer(f"{premium('dollar')} МИНИМАЛЬНАЯ СТАВКА 0.1$")
+            return
         db.set_bet(message.from_user.id, bet)
         await state.clear()
         await message.answer(
@@ -1240,7 +1459,7 @@ async def withdraw_amount(message: Message, state: FSMContext):
         bal = db.get_balance(uid)
         
         if amount < 1:
-            await message.answer(f"{premium('dollar')} МИНИМУМ 1$")
+            await message.answer(f"{premium('dollar')} МИНИМУМ 0.1$")
             return
         if amount > bal:
             await message.answer(f"{premium('dollar')} НЕДОСТАТОЧНО СРЕДСТВ")
@@ -1357,9 +1576,50 @@ async def admin_action(callback: CallbackQuery, state: FSMContext):
             for c in checks:
                 user = db.get_user(c["user_id"])
                 name = user["username"] or user["first_name"] or f"ID{c['user_id']}"
-                text += f"#{c['id']} | {name} | {c['amount']}$ | {c['created_at'][:10]}\n"
+                text += f"#{c['id']} | {name} | {c['amount']}$ | {c['uses_left']}/{c['uses']} | {c['created_at'][:10]}\n"
             await callback.message.edit_text(text, reply_markup=get_main_menu_button())
+    elif action == "fast":
+        await state.set_state(AdminStates.waiting_for_fast_amount)
+        await callback.message.edit_text(
+            f"{premium('dollar')} <b>БЫСТРЫЙ КОНКУРС</b>\n\n"
+            f"💰 ВВЕДИ СУММУ ПРИЗА:",
+            reply_markup=get_main_menu_button()
+        )
     await callback.answer()
+
+@dp.message(AdminStates.waiting_for_fast_amount)
+async def admin_fast_amount(message: Message, state: FSMContext):
+    try:
+        amount = float(message.text.replace("$", ""))
+        if amount < 0.1:
+            await message.answer(f"{premium('dollar')} Минимальная сумма 0.1$")
+            return
+        
+        # Создаем конкурс
+        contest_id = f"fast_{datetime.now().timestamp()}"
+        db.fast_contests[contest_id] = {
+            "amount": amount,
+            "participants": [],
+            "active": True,
+            "created_by": message.from_user.id
+        }
+        
+        # Отправляем сообщение о конкурсе
+        contest_text = (
+            f"{premium('dollar')} <b>БЫСТРЫЙ КОНКУРС</b> {premium('dollar')}\n\n"
+            f"💰 <b>ПРИЗОВОЙ ФОНД:</b> {amount} {premium('dollar')}\n"
+            f"🎲 <b>УЧАСТНИКОВ:</b> 0/6\n\n"
+            f"<b>УЧАСТНИКИ:</b>\n"
+        )
+        
+        await message.answer(
+            contest_text,
+            reply_markup=get_fast_participate_button(contest_id)
+        )
+        await state.clear()
+        
+    except ValueError:
+        await message.answer(f"{premium('dollar')} ВВЕДИ ЧИСЛО")
 
 @dp.message(AdminStates.waiting_for_user_id_balance)
 async def admin_add_id(message: Message, state: FSMContext):
@@ -1429,4 +1689,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-        
