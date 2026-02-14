@@ -1,4 +1,4 @@
-import asyncio
+ import asyncio
 import logging
 import sqlite3
 import random
@@ -613,48 +613,6 @@ async def on_startup():
         print(f"❌ Ошибка при запуске: {e}")
         raise e
 
-# ==================== АВТОМАТИЧЕСКОЕ ИЗМЕНЕНИЕ СТАВКИ ====================
-@dp.message(F.text)
-async def auto_change_bet(message: Message):
-    # ==================== АВТОМАТИЧЕСКОЕ ИЗМЕНЕНИЕ СТАВКИ ====================
-# Используем фильтр: сообщение должно заканчиваться на $ и не начинаться с /
-@dp.message(F.text.endswith('$') & ~F.text.startswith('/'))
-async def auto_change_bet(message: Message):
-    """Автоматическое изменение ставки при вводе числа с $ в конце"""
-    try:
-        text = message.text.strip()
-        
-        # Убираем $ и пробелы
-        cleaned = text.replace('$', '').replace(' ', '').replace(',', '.')
-        
-        # Пробуем преобразовать в число
-        try:
-            new_bet = float(cleaned)
-        except ValueError:
-            await message.answer(f"{premium('dollar')} Неверный формат. Используй например: 5$")
-            return
-        
-        # Проверяем корректность ставки
-        if new_bet <= 0:
-            await message.answer(f"{premium('dollar')} Ставка должна быть больше 0")
-            return
-        
-        if new_bet < 0.1:
-            await message.answer(f"{premium('dollar')} Минимальная ставка 0.1$")
-            return
-        
-        # Сохраняем новую ставку
-        db.set_bet(message.from_user.id, new_bet)
-        
-        await message.answer(
-            f"{premium('transfer')} <b>СТАВКА ИЗМЕНЕНА</b>\n\n"
-            f"{premium('dollar')} Новая ставка: {new_bet:.2f}$",
-            reply_markup=get_main_menu_button()
-        )
-        
-    except Exception as e:
-        await message.answer(f"{premium('dollar')} Ошибка: {e}")
-
 # ==================== КОМАНДЫ ====================
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
@@ -829,6 +787,44 @@ async def pay_amount(message: Message, state: FSMContext):
         await state.clear()
     except:
         await message.answer(f"{premium('dollar')} Введи корректную сумму")
+
+# ==================== АВТОМАТИЧЕСКОЕ ИЗМЕНЕНИЕ СТАВКИ ====================
+@dp.message(F.text.endswith('$') & ~F.text.startswith('/'))
+async def auto_change_bet(message: Message):
+    """Автоматическое изменение ставки при вводе числа с $ в конце"""
+    try:
+        text = message.text.strip()
+        
+        # Убираем $ и пробелы
+        cleaned = text.replace('$', '').replace(' ', '').replace(',', '.')
+        
+        # Пробуем преобразовать в число
+        try:
+            new_bet = float(cleaned)
+        except ValueError:
+            await message.answer(f"{premium('dollar')} Неверный формат. Используй например: 5$")
+            return
+        
+        # Проверяем корректность ставки
+        if new_bet <= 0:
+            await message.answer(f"{premium('dollar')} Ставка должна быть больше 0")
+            return
+        
+        if new_bet < 0.1:
+            await message.answer(f"{premium('dollar')} Минимальная ставка 0.1$")
+            return
+        
+        # Сохраняем новую ставку
+        db.set_bet(message.from_user.id, new_bet)
+        
+        await message.answer(
+            f"{premium('transfer')} <b>СТАВКА ИЗМЕНЕНА</b>\n\n"
+            f"{premium('dollar')} Новая ставка: {new_bet:.2f}$",
+            reply_markup=get_main_menu_button()
+        )
+        
+    except Exception as e:
+        await message.answer(f"{premium('dollar')} Ошибка: {e}")
 
 # ==================== БЫСТРЫЙ КОНКУРС ====================
 @dp.message(Command("fast"))
