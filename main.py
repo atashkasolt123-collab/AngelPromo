@@ -614,16 +614,29 @@ async def on_startup():
         raise e
 
 # ==================== АВТОМАТИЧЕСКОЕ ИЗМЕНЕНИЕ СТАВКИ ====================
-@dp.message(F.text.regexp(r'^\d+[\.,]?\d*\$?$').as_("amount_text"))
+@dp.message(F.text)
 async def auto_change_bet(message: Message):
-    """Автоматическое изменение ставки при вводе числа в чат"""
+    """Автоматическое изменение ставки при вводе числа с $ в конце"""
     try:
         if not message.text:
             return
-            
-        text = message.text.replace("$", "").replace(",", ".").strip()
-        new_bet = float(text)
         
+        text = message.text.strip()
+        
+        # Проверяем, что сообщение заканчивается на $
+        if not text.endswith('$'):
+            return  # Игнорируем, если нет $ в конце
+        
+        # Убираем $ и пробелы
+        cleaned = text.replace('$', '').replace(' ', '').replace(',', '.')
+        
+        # Пробуем преобразовать в число
+        try:
+            new_bet = float(cleaned)
+        except ValueError:
+            return  # Если не число - игнорируем
+        
+        # Проверяем корректность ставки
         if new_bet <= 0:
             await message.answer(f"{premium('dollar')} Ставка должна быть больше 0")
             return
@@ -632,6 +645,7 @@ async def auto_change_bet(message: Message):
             await message.answer(f"{premium('dollar')} Минимальная ставка 0.1$")
             return
         
+        # Сохраняем новую ставку
         db.set_bet(message.from_user.id, new_bet)
         
         await message.answer(
@@ -639,8 +653,11 @@ async def auto_change_bet(message: Message):
             f"{premium('dollar')} Новая ставка: {new_bet:.2f}$",
             reply_markup=get_main_menu_button()
         )
-    except ValueError:
+        
+    except Exception:
+        # Игнорируем все ошибки
         pass
+
 
 # ==================== КОМАНДЫ ====================
 @dp.message(CommandStart())
