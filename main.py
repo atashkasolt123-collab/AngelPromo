@@ -22,9 +22,8 @@ import aiohttp
 BOT_TOKEN = "8216893084:AAEu4U9ftWicx3UFO9Qlvm42WO0z4Q_nmT4"
 ADMIN_ID = 7313407194
 CRYPTOPAY_TOKEN = "531599:AAxGq5ZSfCUBnSn0gyfUCyB5tB4VKr0rmRd"
-
-# Админ для выводов/пополнений
 WITHDRAW_ADMIN = "@qwhatss"
+CHATS_LINK = "https://t.me/PllaysBet"
 
 # ==================== ПРЕМИУМ ЭМОДЗИ ====================
 PREMIUM_EMOJIS = {
@@ -48,7 +47,6 @@ class Database:
     def __init__(self, db_name="game_bot.db"):
         self.db_name = db_name
         self.init_db()
-        # Для резерва
         self.reserve_cache = {
             "amount": random.uniform(700, 790),
             "updated": datetime.now()
@@ -80,6 +78,15 @@ class Database:
                     field TEXT,
                     opened_cells TEXT,
                     game_active INTEGER DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS checks (
+                    check_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    amount REAL,
+                    check_data TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
@@ -239,6 +246,33 @@ class Database:
             )
             conn.commit()
 
+    def save_check(self, user_id: int, amount: float, check_data: str) -> int:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO checks (user_id, amount, check_data) VALUES (?, ?, ?) RETURNING check_id",
+                (user_id, amount, check_data)
+            )
+            result = cursor.fetchone()
+            conn.commit()
+            return result[0] if result else 0
+
+    def get_checks(self, user_id: Optional[int] = None) -> List[Dict]:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if user_id:
+                cursor.execute(
+                    "SELECT check_id, amount, check_data, created_at FROM checks WHERE user_id = ? ORDER BY created_at DESC",
+                    (user_id,)
+                )
+            else:
+                cursor.execute("SELECT check_id, user_id, amount, check_data, created_at FROM checks ORDER BY created_at DESC")
+            rows = cursor.fetchall()
+            if user_id:
+                return [{"id": r[0], "amount": r[1], "data": r[2], "created_at": r[3]} for r in rows]
+            else:
+                return [{"id": r[0], "user_id": r[1], "amount": r[2], "data": r[3], "created_at": r[4]} for r in rows]
+
     def save_payment_request(self, user_id: int, amount: float, type: str) -> int:
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -356,13 +390,17 @@ class PayStates(StatesGroup):
     waiting_for_user_id = State()
     waiting_for_amount = State()
 
+class CheckStates(StatesGroup):
+    waiting_for_amount = State()
+
 # ==================== INLINE КНОПКИ ====================
 def get_start_buttons():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎮 ИГРАТЬ", callback_data="menu_games"),
          InlineKeyboardButton(text="👤 ПРОФИЛЬ", callback_data="menu_profile")],
         [InlineKeyboardButton(text="🏆 ТОПЫ", callback_data="menu_top"),
-         InlineKeyboardButton(text="💬 ЧАТЫ", callback_data="menu_chats")]
+         InlineKeyboardButton(text="💬 ЧАТЫ", callback_data="menu_chats")],
+        [InlineKeyboardButton(text="💰 ЧЕКИ", callback_data="menu_checks")]
     ])
 
 def get_games_buttons():
@@ -393,6 +431,13 @@ def get_top_buttons():
         [InlineKeyboardButton(text="◀️ НАЗАД", callback_data="menu_main")]
     ])
 
+def get_checks_buttons():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 СОЗДАТЬ ЧЕК", callback_data="check_create")],
+        [InlineKeyboardButton(text="📋 МОИ ЧЕКИ", callback_data="check_list")],
+        [InlineKeyboardButton(text="◀️ НАЗАД", callback_data="menu_main")]
+    ])
+
 def get_mines_menu_buttons():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💣 НАЧАТЬ ИГРУ", callback_data="mines_start")],
@@ -418,7 +463,6 @@ def get_mines_field_buttons(game_id: int, opened: list, active: bool, mult: floa
         kb.append(row)
     if active and len(opened) > 0:
         kb.append([InlineKeyboardButton(text=f"💰 ЗАБРАТЬ x{mult:.2f}", callback_data="take")])
-    kb.append([InlineKeyboardButton(text="◀️ ВЫЙТИ", callback_data="mines_menu")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 def get_profile_buttons():
@@ -446,6 +490,7 @@ def get_admin_buttons():
         [InlineKeyboardButton(text="2️⃣ ОБНУЛИТЬ БАЛАНС", callback_data="admin_reset")],
         [InlineKeyboardButton(text="3️⃣ РАССЫЛКА", callback_data="admin_broadcast")],
         [InlineKeyboardButton(text="4️⃣ ЗАПРОСЫ ВЫВОДА", callback_data="admin_withdraws")],
+        [InlineKeyboardButton(text="5️⃣ ЧЕКИ", callback_data="admin_checks")],
         [InlineKeyboardButton(text="🏠 ГЛАВНОЕ МЕНЮ", callback_data="menu_main")]
     ])
 
@@ -515,6 +560,7 @@ class GameLogic:
 logging.basicConfig(level=logging.INFO)
 
 print("🔧 Запуск бота...")
+print(f"🤖 Токен: {BOT_TOKEN[:15]}...")
 
 try:
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -535,7 +581,7 @@ async def on_startup():
         print(f"❌ Ошибка при запуске: {e}")
         raise e
 
-# ==================== МЕНЮ ====================
+# ==================== КОМАНДЫ ====================
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     user = message.from_user
@@ -563,11 +609,13 @@ async def cmd_help(message: Message):
         f"• /pay ID СУММА - перевести средства\n"
         f"• /top - топ игроков\n"
         f"• /reserve - резерв бота\n"
+        f"• /game mines НОМЕР - показать мины (только админ)\n"
         f"• /help - эта справка\n"
         f"• /admin - админ панель\n\n"
         f"<b>💳 ВЫВОДЫ:</b>\n"
         f"Выводы через администратора {WITHDRAW_ADMIN}\n"
-        f"После запроса напишите администратору"
+        f"После запроса напишите администратору\n\n"
+        f"<b>💬 НАШ ЧАТ:</b> {CHATS_LINK}"
     )
     await message.answer(help_text)
 
@@ -588,6 +636,51 @@ async def cmd_top(message: Message):
         f"🔄 Топ по обороту",
         reply_markup=get_top_buttons()
     )
+
+@dp.message(Command("game"))
+async def cmd_game(message: Message):
+    user = db.get_user(message.from_user.id)
+    if not user or not user.get("is_admin"):
+        await message.answer(f"{premium('dollar')} НЕТ ПРАВ!")
+        return
+    
+    args = message.text.split()
+    if len(args) != 3 or args[1] != "mines":
+        await message.answer(f"{premium('dollar')} Используй: /game mines НОМЕР_ИГРЫ")
+        return
+    
+    try:
+        game_id = int(args[2])
+        game = db.get_mines_game(game_id)
+        if not game:
+            await message.answer(f"{premium('dollar')} ИГРА НЕ НАЙДЕНА")
+            return
+        
+        field = list(map(int, game["field"].split(",")))
+        opened = list(map(int, game["opened_cells"].split(","))) if game["opened_cells"] else []
+        
+        # Создаем карту поля
+        field_map = ""
+        for i in range(5):
+            row = ""
+            for j in range(5):
+                idx = i * 5 + j
+                if field[idx] == 1:
+                    row += "💥 "
+                else:
+                    row += "⬜ "
+            field_map += row + "\n"
+        
+        await message.answer(
+            f"{premium('lightning')} <b>МИНЫ | ИГРА #{game_id}</b>\n\n"
+            f"👤 ИГРОК: {game['user_id']}\n"
+            f"💰 СТАВКА: {game['bet']} {premium('dollar')}\n"
+            f"🔄 ОТКРЫТО: {len(opened)}\n"
+            f"⚡ АКТИВНА: {'ДА' if game['game_active'] else 'НЕТ'}\n\n"
+            f"<b>ПОЛЕ:</b>\n{field_map}"
+        )
+    except Exception as e:
+        await message.answer(f"{premium('dollar')} ОШИБКА: {e}")
 
 @dp.message(Command("pay"))
 async def cmd_pay(message: Message, state: FSMContext):
@@ -657,6 +750,7 @@ async def pay_amount(message: Message, state: FSMContext):
     except:
         await message.answer(f"{premium('dollar')} Введи корректную сумму")
 
+# ==================== МЕНЮ ====================
 @dp.callback_query(F.data == "menu_main")
 async def menu_main(callback: CallbackQuery):
     await callback.message.edit_text(
@@ -705,6 +799,26 @@ async def menu_top(callback: CallbackQuery):
     )
     await callback.answer()
 
+@dp.callback_query(F.data == "menu_checks")
+async def menu_checks(callback: CallbackQuery):
+    await callback.message.edit_text(
+        f"{premium('balance')} <b>ЧЕКИ</b>\n\n"
+        f"💰 СОЗДАВАЙ И УПРАВЛЯЙ ЧЕКАМИ\n\n"
+        f"👇 ВЫБЕРИ ДЕЙСТВИЕ:",
+        reply_markup=get_checks_buttons()
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data == "menu_chats")
+async def menu_chats(callback: CallbackQuery):
+    await callback.message.edit_text(
+        f"{premium('lightning')} <b>НАШ ЧАТ</b>\n\n"
+        f"💬 Присоединяйся к общению:\n{CHATS_LINK}",
+        reply_markup=get_main_menu_button()
+    )
+    await callback.answer()
+
+# ==================== ТОПЫ ====================
 @dp.callback_query(F.data == "top_balance")
 async def top_balance(callback: CallbackQuery):
     top_users = db.get_top_balance(10)
@@ -739,24 +853,71 @@ async def top_turnover(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=get_main_menu_button())
     await callback.answer()
 
-@dp.callback_query(F.data == "menu_chats")
-async def menu_chats(callback: CallbackQuery):
+# ==================== ЧЕКИ ====================
+@dp.callback_query(F.data == "check_create")
+async def check_create(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(CheckStates.waiting_for_amount)
     await callback.message.edit_text(
-        f"{premium('lightning')} <b>ЧАТЫ</b>\n\nСкоро появятся!",
+        f"{premium('balance')} <b>СОЗДАНИЕ ЧЕКА</b>\n\n"
+        f"{premium('balance')} БАЛАНС: {db.get_balance(callback.from_user.id):.2f} {premium('dollar')}\n"
+        f"💰 МИНИМУМ: 1$\n\n"
+        f"📝 ВВЕДИ СУММУ ЧЕКА:",
         reply_markup=get_main_menu_button()
     )
     await callback.answer()
 
-@dp.message(Command("admin"))
-async def cmd_admin(message: Message):
-    user = db.get_user(message.from_user.id)
-    if not user or not user.get("is_admin"):
-        await message.answer(f"{premium('dollar')} НЕТ ПРАВ!")
+@dp.message(CheckStates.waiting_for_amount)
+async def check_amount(message: Message, state: FSMContext):
+    try:
+        amount = float(message.text.replace("$", ""))
+        uid = message.from_user.id
+        bal = db.get_balance(uid)
+        
+        if amount < 1:
+            await message.answer(f"{premium('dollar')} МИНИМУМ 1$")
+            return
+        if amount > bal:
+            await message.answer(f"{premium('dollar')} НЕДОСТАТОЧНО СРЕДСТВ")
+            return
+        
+        # Создаем чек
+        check_data = f"CHECK{uid}{random.randint(1000, 9999)}"
+        check_id = db.save_check(uid, amount, check_data)
+        
+        # Списываем средства
+        db.update_balance(uid, -amount)
+        
+        await message.answer(
+            f"{premium('balance')} <b>ЧЕК СОЗДАН!</b>\n\n"
+            f"💰 СУММА: {amount} {premium('dollar')}\n"
+            f"📋 НОМЕР: #{check_id}\n"
+            f"🔑 КОД: <code>{check_data}</code>\n\n"
+            f"📤 Отправьте код получателю",
+            reply_markup=get_main_menu_button()
+        )
+        await state.clear()
+        
+    except ValueError:
+        await message.answer(f"{premium('dollar')} ВВЕДИ ЧИСЛО")
+
+@dp.callback_query(F.data == "check_list")
+async def check_list(callback: CallbackQuery):
+    checks = db.get_checks(callback.from_user.id)
+    
+    if not checks:
+        await callback.message.edit_text(
+            f"{premium('balance')} <b>У ВАС НЕТ ЧЕКОВ</b>",
+            reply_markup=get_main_menu_button()
+        )
+        await callback.answer()
         return
-    await message.answer(
-        f"{premium('lightning')} <b>АДМИН ПАНЕЛЬ</b>\n\n👇 ВЫБЕРИ ДЕЙСТВИЕ:",
-        reply_markup=get_admin_buttons()
-    )
+    
+    text = f"{premium('balance')} <b>ВАШИ ЧЕКИ</b>\n\n"
+    for c in checks:
+        text += f"#{c['id']} | {c['amount']} {premium('dollar')} | {c['created_at'][:10]}\n"
+    
+    await callback.message.edit_text(text, reply_markup=get_main_menu_button())
+    await callback.answer()
 
 # ==================== ИГРЫ ====================
 @dp.callback_query(F.data.startswith("game_"))
@@ -834,25 +995,28 @@ async def mines_start(callback: CallbackQuery):
     db.update_balance(uid, -bet)
     
     field = GameLogic.generate_mines_field(2)
+    field_str = ",".join(map(str, field))
+    game_id = db.create_mines_game(uid, bet, field_str)
     
-    active_games[uid] = {
+    active_games[game_id] = {
         "field": field,
         "opened": [],
         "active": True,
-        "bet": bet
+        "bet": bet,
+        "user_id": uid
     }
     
     user = db.get_user(uid)
     name = user["username"] or user["first_name"] or f"ID{uid}"
     
     await callback.message.edit_text(
-        f"{premium('lightning')} <b>МИНЫ | ИГРА</b>\n\n"
+        f"{premium('lightning')} <b>МИНЫ | ИГРА #{game_id}</b>\n\n"
         f"👤 {name}\n"
         f"{premium('balance')} БАЛАНС: {bal - bet:.2f} {premium('dollar')}\n"
         f"{premium('transfer')} СТАВКА: {bet:.2f} {premium('dollar')}\n\n"
         f"💣 МИН: 2\n"
         f"⬛ ОТКРЫВАЙ КЛЕТКИ:",
-        reply_markup=get_mines_field_buttons(uid, [], True, 1.0)
+        reply_markup=get_mines_field_buttons(game_id, [], True, 1.0)
     )
     await callback.answer()
 
@@ -864,15 +1028,17 @@ async def mines_cell(callback: CallbackQuery):
         await callback.answer("❌ ОШИБКА!", show_alert=True)
         return
 
-    uid = callback.from_user.id
-    game = active_games.get(uid)
+    # Ищем игру по всем активным
+    game_id = None
+    game = None
+    for gid, g in active_games.items():
+        if g["user_id"] == callback.from_user.id and g["active"]:
+            game_id = gid
+            game = g
+            break
     
     if not game:
         await callback.answer("❌ ИГРА НЕ НАЙДЕНА!", show_alert=True)
-        return
-    
-    if not game["active"]:
-        await callback.answer("❌ ИГРА ЗАКОНЧЕНА!", show_alert=True)
         return
 
     if idx in game["opened"]:
@@ -881,51 +1047,55 @@ async def mines_cell(callback: CallbackQuery):
 
     if game["field"][idx] == 1:
         game["active"] = False
+        db.update_mines_game(game_id, ",".join(map(str, game["opened"])), 0)
         
-        user = db.get_user(uid)
-        name = user["username"] or user["first_name"] or f"ID{uid}"
+        user = db.get_user(callback.from_user.id)
+        name = user["username"] or user["first_name"] or f"ID{callback.from_user.id}"
         
         await callback.message.edit_text(
             f"{premium('lightning')} <b>МИНЫ | ПРОИГРЫШ</b>\n\n"
             f"👤 {name}\n"
-            f"{premium('balance')} БАЛАНС: {db.get_balance(uid):.2f} {premium('dollar')}\n\n"
+            f"{premium('balance')} БАЛАНС: {db.get_balance(callback.from_user.id):.2f} {premium('dollar')}\n\n"
             f"💥 БАБАХ! ТЫ ПОДОРВАЛСЯ!",
-            reply_markup=get_mines_field_buttons(uid, game["opened"] + [idx], False, 0)
+            reply_markup=get_mines_field_buttons(game_id, game["opened"] + [idx], False, 0)
         )
         await callback.answer("💥 МИНА!", show_alert=True)
         return
 
     game["opened"].append(idx)
+    db.update_mines_game(game_id, ",".join(map(str, game["opened"])), 1)
 
     mult = GameLogic.get_multiplier(len(game["opened"]))
     potential = game["bet"] * mult
 
-    user = db.get_user(uid)
-    name = user["username"] or user["first_name"] or f"ID{uid}"
+    user = db.get_user(callback.from_user.id)
+    name = user["username"] or user["first_name"] or f"ID{callback.from_user.id}"
 
     await callback.message.edit_text(
-        f"{premium('lightning')} <b>МИНЫ | ИГРА</b>\n\n"
+        f"{premium('lightning')} <b>МИНЫ | ИГРА #{game_id}</b>\n\n"
         f"👤 {name}\n"
-        f"{premium('balance')} БАЛАНС: {db.get_balance(uid):.2f} {premium('dollar')}\n"
+        f"{premium('balance')} БАЛАНС: {db.get_balance(callback.from_user.id):.2f} {premium('dollar')}\n"
         f"{premium('transfer')} СТАВКА: {game['bet']:.2f} {premium('dollar')}\n\n"
         f"📊 МНОЖИТЕЛЬ: x{mult}\n"
         f"💰 ВЫИГРЫШ: {potential:.2f} {premium('dollar')}\n"
         f"⬛ ОТКРЫТО: {len(game['opened'])}",
-        reply_markup=get_mines_field_buttons(uid, game["opened"], True, mult)
+        reply_markup=get_mines_field_buttons(game_id, game["opened"], True, mult)
     )
     await callback.answer()
 
 @dp.callback_query(F.data == "take")
 async def mines_take(callback: CallbackQuery):
-    uid = callback.from_user.id
-    game = active_games.get(uid)
+    # Ищем игру по всем активным
+    game_id = None
+    game = None
+    for gid, g in active_games.items():
+        if g["user_id"] == callback.from_user.id and g["active"]:
+            game_id = gid
+            game = g
+            break
     
     if not game:
         await callback.answer("❌ ИГРА НЕ НАЙДЕНА!", show_alert=True)
-        return
-
-    if not game["active"]:
-        await callback.answer("❌ ИГРА ЗАКОНЧЕНА!", show_alert=True)
         return
 
     if not game["opened"]:
@@ -935,19 +1105,20 @@ async def mines_take(callback: CallbackQuery):
     mult = GameLogic.get_multiplier(len(game["opened"]))
     win = game["bet"] * mult
 
-    db.update_balance(uid, win)
-    db.update_turnover(uid, game["bet"])
+    db.update_balance(callback.from_user.id, win)
+    db.update_turnover(callback.from_user.id, game["bet"])
     game["active"] = False
+    db.update_mines_game(game_id, ",".join(map(str, game["opened"])), 0)
 
-    user = db.get_user(uid)
-    name = user["username"] or user["first_name"] or f"ID{uid}"
+    user = db.get_user(callback.from_user.id)
+    name = user["username"] or user["first_name"] or f"ID{callback.from_user.id}"
 
     await callback.message.edit_text(
         f"{premium('lightning')} <b>МИНЫ | ВЫИГРЫШ</b>\n\n"
         f"👤 {name}\n"
-        f"{premium('balance')} БАЛАНС: {db.get_balance(uid):.2f} {premium('dollar')}\n\n"
+        f"{premium('balance')} БАЛАНС: {db.get_balance(callback.from_user.id):.2f} {premium('dollar')}\n\n"
         f"✅ ВЫИГРЫШ: {win:.2f} {premium('dollar')} (x{mult})",
-        reply_markup=get_mines_field_buttons(uid, game["opened"], False, mult)
+        reply_markup=get_mines_field_buttons(game_id, game["opened"], False, mult)
     )
     await callback.answer(f"💰 +{win:.2f} {premium('dollar')}", show_alert=True)
 
@@ -978,7 +1149,7 @@ async def new_bet(message: Message, state: FSMContext):
     except:
         await message.answer(f"{premium('dollar')} ВВЕДИ ЧИСЛО")
 
-# ==================== ПРОФИЛЬ (ЧЕРЕЗ АДМИНА) ====================
+# ==================== ПРОФИЛЬ ====================
 @dp.callback_query(F.data == "deposit")
 async def deposit(callback: CallbackQuery):
     await callback.message.edit_text(
@@ -1016,10 +1187,8 @@ async def withdraw_amount(message: Message, state: FSMContext):
             await message.answer(f"{premium('dollar')} НЕДОСТАТОЧНО СРЕДСТВ")
             return
         
-        # Создаем заявку на вывод
         payment_id = db.save_payment_request(uid, amount, "withdraw")
         
-        # Уведомляем админа
         user = db.get_user(uid)
         name = user["username"] or user["first_name"] or f"ID{uid}"
         
@@ -1067,7 +1236,6 @@ async def confirm_withdraw(message: Message):
         
         await message.answer(f"✅ ВЫВОД #{payment_id} ПОДТВЕРЖДЕН")
         
-        # Уведомляем пользователя
         try:
             await bot.send_message(
                 payment["user_id"],
@@ -1081,6 +1249,17 @@ async def confirm_withdraw(message: Message):
             
     except Exception as e:
         await message.answer(f"❌ ОШИБКА: {e}")
+
+@dp.message(Command("admin"))
+async def cmd_admin(message: Message):
+    user = db.get_user(message.from_user.id)
+    if not user or not user.get("is_admin"):
+        await message.answer(f"{premium('dollar')} НЕТ ПРАВ!")
+        return
+    await message.answer(
+        f"{premium('lightning')} <b>АДМИН ПАНЕЛЬ</b>\n\n👇 ВЫБЕРИ ДЕЙСТВИЕ:",
+        reply_markup=get_admin_buttons()
+    )
 
 @dp.callback_query(F.data.startswith("admin_"))
 async def admin_action(callback: CallbackQuery, state: FSMContext):
@@ -1109,6 +1288,17 @@ async def admin_action(callback: CallbackQuery, state: FSMContext):
                 user = db.get_user(p["user_id"])
                 name = user["username"] or user["first_name"] or f"ID{p['user_id']}"
                 text += f"#{p['id']} | {name} | {p['amount']}$\n"
+            await callback.message.edit_text(text, reply_markup=get_main_menu_button())
+    elif action == "checks":
+        checks = db.get_checks()
+        if not checks:
+            await callback.message.edit_text("📭 НЕТ ЧЕКОВ", reply_markup=get_main_menu_button())
+        else:
+            text = f"{premium('lightning')} <b>ВСЕ ЧЕКИ</b>\n\n"
+            for c in checks:
+                user = db.get_user(c["user_id"])
+                name = user["username"] or user["first_name"] or f"ID{c['user_id']}"
+                text += f"#{c['id']} | {name} | {c['amount']}$ | {c['created_at'][:10]}\n"
             await callback.message.edit_text(text, reply_markup=get_main_menu_button())
     await callback.answer()
 
