@@ -19,9 +19,11 @@ from aiogram.enums import ParseMode, DiceEmoji
 import aiohttp
 
 # ==================== ТОКЕНЫ ====================
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8216893084:AAG9xd5IgFhE4wz0HgEA_dYzHU7PeQH-2hY")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "7313407194"))
-CRYPTOPAY_TOKEN = os.getenv("CRYPTOPAY_TOKEN", "531599:AA05JiziAQmfqkmjjfrez3kzMpLD9pTgj4J")
+# ⚠️ ВАЖНО: ВСТАВЬ СЮДА НОВЫЙ ТОКЕН ИЗ BOTFATHER
+BOT_TOKEN = "8216893084:AAEu4U9ftWicx3UFO9Qlvm42WO0z4Q_nmT4"  # ← ЗАМЕНИ НА НОВЫЙ!
+
+ADMIN_ID = 7313407194
+CRYPTOPAY_TOKEN = "531599:AAxGq5ZSfCUBnSn0gyfUCyB5tB4VKr0rmRd"
 
 # ==================== ПРЕМИУМ ЭМОДЗИ ====================
 PREMIUM_EMOJIS = {
@@ -243,8 +245,8 @@ class CryptoPayClient:
                         data = await resp.json()
                         if data.get("ok"):
                             return data["result"]
-        except:
-            pass
+        except Exception as e:
+            print(f"Ошибка CryptoPay: {e}")
         return None
 
     async def get_invoice_status(self, invoice_id: str) -> Optional[str]:
@@ -257,8 +259,8 @@ class CryptoPayClient:
                         data = await resp.json()
                         if data.get("ok") and data["result"]["items"]:
                             return data["result"]["items"][0]["status"]
-        except:
-            pass
+        except Exception as e:
+            print(f"Ошибка проверки: {e}")
         return None
 
     async def create_check(self, amount: float, asset: str = "USDT") -> Optional[Dict]:
@@ -274,8 +276,8 @@ class CryptoPayClient:
                         data = await resp.json()
                         if data.get("ok"):
                             return data["result"]
-        except:
-            pass
+        except Exception as e:
+            print(f"Ошибка CryptoPay: {e}")
         return None
 
 # ==================== FSM ====================
@@ -332,10 +334,7 @@ def get_mines_menu_buttons():
     ])
 
 def get_mines_field_buttons(game_id: int, opened: list, active: bool, mult: float = 1.0):
-    """Создание поля 5x5 для игры в мины"""
     kb = []
-    
-    # Строки 0-4
     for i in range(5):
         row = []
         for j in range(5):
@@ -344,19 +343,13 @@ def get_mines_field_buttons(game_id: int, opened: list, active: bool, mult: floa
                 row.append(InlineKeyboardButton(text="✅", callback_data="ignore"))
             else:
                 if active:
-                    # ПРОСТЕЙШАЯ callback_data - только цифры
-                    row.append(InlineKeyboardButton(text="⬛", callback_data=f"m{idx}"))
+                    row.append(InlineKeyboardButton(text="⬛", callback_data=f"cell_{idx}"))
                 else:
                     row.append(InlineKeyboardButton(text="⬛", callback_data="ignore"))
         kb.append(row)
-    
-    # Кнопка забора выигрыша
     if active and len(opened) > 0:
-        kb.append([InlineKeyboardButton(text=f"💰 ЗАБРАТЬ x{mult:.2f}", callback_data=f"take")])
-    
-    # Кнопка выхода
+        kb.append([InlineKeyboardButton(text=f"💰 ЗАБРАТЬ x{mult:.2f}", callback_data="take")])
     kb.append([InlineKeyboardButton(text="◀️ ВЫЙТИ", callback_data="mines_menu")])
-    
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 def get_profile_buttons():
@@ -451,22 +444,35 @@ class GameLogic:
 # ==================== БОТ ====================
 logging.basicConfig(level=logging.INFO)
 
+print("🔧 Запуск бота...")
+print(f"🤖 Токен: {BOT_TOKEN[:15]}...")
+
 if BOT_TOKEN == "8216893084:AAER8aRjEUUYWMepqn5l2_7IPxLjl56K9Ps":
-    print("❌ ОШИБКА: Токен бота недействителен!")
-    exit()
+    print("❌ ОШИБКА: Используется СТАРЫЙ токен!")
+    print("👉 Нужно получить НОВЫЙ токен в @BotFather")
+    print("👉 После получения нового токена, замени его в коде")
+    exit(1)
 
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-dp = Dispatcher(storage=MemoryStorage())
-db = Database()
-crypto = CryptoPayClient(CRYPTOPAY_TOKEN)
-
-bot_info = None
+try:
+    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    dp = Dispatcher(storage=MemoryStorage())
+    db = Database()
+    crypto = CryptoPayClient(CRYPTOPAY_TOKEN)
+    print("✅ Бот создан успешно")
+except Exception as e:
+    print(f"❌ Ошибка создания бота: {e}")
+    exit(1)
 
 @dp.startup()
 async def on_startup():
-    global bot_info
-    bot_info = await bot.get_me()
-    print(f"🚀 БОТ @{bot_info.username} ЗАПУЩЕН!")
+    try:
+        bot_info = await bot.get_me()
+        print(f"🚀 БОТ @{bot_info.username} ЗАПУЩЕН!")
+        print(f"✅ ID: {bot_info.id}")
+        print(f"✅ Имя: {bot_info.first_name}")
+    except Exception as e:
+        print(f"❌ Ошибка при запуске: {e}")
+        raise e
 
 # ==================== МЕНЮ ====================
 @dp.message(CommandStart())
@@ -648,7 +654,6 @@ async def game_play(callback: CallbackQuery):
     await callback.answer()
 
 # ==================== МИНЫ ====================
-# Хранилище игр в памяти (для простоты)
 active_games = {}
 
 @dp.callback_query(F.data == "mines_menu")
@@ -679,22 +684,18 @@ async def mines_start(callback: CallbackQuery):
         await callback.answer("❌ НЕДОСТАТОЧНО СРЕДСТВ!", show_alert=True)
         return
 
-    # Списываем ставку
     db.update_balance(uid, -bet)
     
-    # Создаем поле
     field = GameLogic.generate_mines_field(2)
     print(f"👉 Создано поле: {field}")
     
-    # Сохраняем в памяти (для простоты)
-    game_id = uid  # Используем ID пользователя как game_id для простоты
-    active_games[game_id] = {
+    active_games[uid] = {
         "field": field,
         "opened": [],
         "active": True,
         "bet": bet
     }
-    print(f"👉 Игра сохранена с ID: {game_id}")
+    print(f"👉 Игра сохранена для пользователя {uid}")
     
     user = db.get_user(uid)
     name = user["username"] or user["first_name"] or f"ID{uid}"
@@ -706,17 +707,16 @@ async def mines_start(callback: CallbackQuery):
         f"{premium('transfer')} СТАВКА: {bet:.2f} {premium('dollar')}\n\n"
         f"💣 МИН: 2\n"
         f"⬛ ОТКРЫВАЙ КЛЕТКИ:",
-        reply_markup=get_mines_field_buttons(game_id, [], True, 1.0)
+        reply_markup=get_mines_field_buttons(uid, [], True, 1.0)
     )
     await callback.answer()
 
-@dp.callback_query(F.data.startswith("m"))
+@dp.callback_query(F.data.startswith("cell_"))
 async def mines_cell(callback: CallbackQuery):
     print(f"👉 mines_cell вызван с data: {callback.data}")
     
     try:
-        # data = "m0", "m1", ... "m24"
-        idx = int(callback.data[1:])
+        idx = int(callback.data.split("_")[1])
         print(f"👉 Индекс клетки: {idx}")
     except Exception as e:
         print(f"❌ Ошибка парсинга: {e}")
@@ -731,8 +731,6 @@ async def mines_cell(callback: CallbackQuery):
         await callback.answer("❌ ИГРА НЕ НАЙДЕНА!", show_alert=True)
         return
     
-    print(f"👉 Игра найдена: {game}")
-
     if not game["active"]:
         await callback.answer("❌ ИГРА ЗАКОНЧЕНА!", show_alert=True)
         return
@@ -741,12 +739,8 @@ async def mines_cell(callback: CallbackQuery):
         await callback.answer("✅ УЖЕ ОТКРЫТО!", show_alert=True)
         return
 
-    print(f"👉 Поле: {game['field']}, клетка {idx} = {game['field'][idx]}")
-
-    # ПРОВЕРКА НА МИНУ
     if game["field"][idx] == 1:
         print(f"💥 МИНА! Клетка {idx} - мина")
-        # ПРОИГРЫШ
         game["active"] = False
         
         user = db.get_user(uid)
@@ -762,7 +756,6 @@ async def mines_cell(callback: CallbackQuery):
         await callback.answer("💥 МИНА!", show_alert=True)
         return
 
-    # ОТКРЫВАЕМ КЛЕТКУ
     print(f"✅ Клетка {idx} безопасна, открываем")
     game["opened"].append(idx)
 
@@ -787,7 +780,7 @@ async def mines_cell(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "take")
 async def mines_take(callback: CallbackQuery):
-    print(f"👉 mines_take вызван")
+    print(f"👉 take вызван")
     
     uid = callback.from_user.id
     game = active_games.get(uid)
