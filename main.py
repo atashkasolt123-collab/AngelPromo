@@ -609,9 +609,7 @@ async def cmd_help(message: Message):
         f"• /pay ID СУММА - перевести средства\n"
         f"• /top - топ игроков\n"
         f"• /reserve - резерв бота\n"
-        f"• /game mines НОМЕР - показать мины (только админ)\n"
         f"• /help - эта справка\n"
-        f"• /admin - админ панель\n\n"
         f"<b>💳 ВЫВОДЫ:</b>\n"
         f"Выводы через администратора {WITHDRAW_ADMIN}\n"
         f"После запроса напишите администратору\n\n"
@@ -749,6 +747,64 @@ async def pay_amount(message: Message, state: FSMContext):
         await state.clear()
     except:
         await message.answer(f"{premium('dollar')} Введи корректную сумму")
+        @dp.message(Command("activate"))
+async def cmd_activate(message: Message):
+    """Активация чека по коду"""
+    args = message.text.split()
+    
+    if len(args) != 2:
+        await message.answer(
+            f"{premium('dollar')} <b>ИСПОЛЬЗУЙ:</b> /activate КОД_ЧЕКА\n\n"
+            f"Пример: /activate CHECK73134071943644"
+        )
+        return
+    
+    check_code = args[1].strip()
+    uid = message.from_user.id
+    
+    # Ищем чек в базе
+    checks = db.get_checks()
+    check = None
+    
+    for c in checks:
+        if c["data"] == check_code:
+            check = c
+            break
+    
+    if not check:
+        await message.answer(f"{premium('dollar')} <b>ЧЕК НЕ НАЙДЕН</b>\n\nПроверь правильность кода")
+        return
+    
+    # Проверяем, не пытается ли владелец активировать свой чек
+    if check["user_id"] == uid:
+        await message.answer(f"{premium('dollar')} <b>НЕЛЬЗЯ АКТИВИРОВАТЬ СВОЙ ЧЕК</b>")
+        return
+    
+    # Активируем чек
+    db.update_balance(uid, check["amount"])
+    
+    # Удаляем чек из базы
+    with sqlite3.connect(db.db_name) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM checks WHERE check_id = ?", (check["id"],))
+        conn.commit()
+    
+    # Уведомляем получателя
+    await message.answer(
+        f"{premium('balance')} <b>ЧЕК АКТИВИРОВАН!</b>\n\n"
+        f"💰 СУММА: +{check['amount']} {premium('dollar')}\n"
+        f"{premium('balance')} НОВЫЙ БАЛАНС: {db.get_balance(uid):.2f} {premium('dollar')}"
+    )
+    
+    # Уведомляем отправителя
+    try:
+        await bot.send_message(
+            check["user_id"],
+            f"{premium('balance')} <b>ЧЕК АКТИВИРОВАН</b>\n\n"
+            f"💰 Ваш чек на {check['amount']} {premium('dollar')} был активирован"
+        )
+    except:
+        pass
 
 # ==================== МЕНЮ ====================
 @dp.callback_query(F.data == "menu_main")
