@@ -609,6 +609,7 @@ async def cmd_help(message: Message):
         f"• /pay ID СУММА - перевести средства\n"
         f"• /top - топ игроков\n"
         f"• /reserve - резерв бота\n"
+        f"• /activate КОД - активировать чек\n"
         f"• /help - эта справка\n"
         f"<b>💳 ВЫВОДЫ:</b>\n"
         f"Выводы через администратора {WITHDRAW_ADMIN}\n"
@@ -747,7 +748,9 @@ async def pay_amount(message: Message, state: FSMContext):
         await state.clear()
     except:
         await message.answer(f"{premium('dollar')} Введи корректную сумму")
-        @dp.message(Command("activate"))
+
+# ==================== АКТИВАЦИЯ ЧЕКА ====================
+@dp.message(Command("activate"))
 async def cmd_activate(message: Message):
     """Активация чека по коду"""
     args = message.text.split()
@@ -1426,3 +1429,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+        
