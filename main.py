@@ -616,18 +616,13 @@ async def on_startup():
 # ==================== АВТОМАТИЧЕСКОЕ ИЗМЕНЕНИЕ СТАВКИ ====================
 @dp.message(F.text)
 async def auto_change_bet(message: Message):
+    # ==================== АВТОМАТИЧЕСКОЕ ИЗМЕНЕНИЕ СТАВКИ ====================
+# Используем фильтр: сообщение должно заканчиваться на $ и не начинаться с /
+@dp.message(F.text.endswith('$') & ~F.text.startswith('/'))
+async def auto_change_bet(message: Message):
     """Автоматическое изменение ставки при вводе числа с $ в конце"""
-    
-    # ⚠️ ВАЖНО: Пропускаем команды (начинаются с /)
-    if message.text.startswith('/'):
-        return  # Не обрабатываем команды, они уйдут в другие хендлеры
-    
     try:
         text = message.text.strip()
-        
-        # Проверяем, что сообщение заканчивается на $
-        if not text.endswith('$'):
-            return  # Игнорируем, если нет $ в конце
         
         # Убираем $ и пробелы
         cleaned = text.replace('$', '').replace(' ', '').replace(',', '.')
@@ -636,7 +631,8 @@ async def auto_change_bet(message: Message):
         try:
             new_bet = float(cleaned)
         except ValueError:
-            return  # Если не число - игнорируем
+            await message.answer(f"{premium('dollar')} Неверный формат. Используй например: 5$")
+            return
         
         # Проверяем корректность ставки
         if new_bet <= 0:
@@ -656,9 +652,8 @@ async def auto_change_bet(message: Message):
             reply_markup=get_main_menu_button()
         )
         
-    except Exception:
-        # Игнорируем все ошибки
-        pass
+    except Exception as e:
+        await message.answer(f"{premium('dollar')} Ошибка: {e}")
 
 # ==================== КОМАНДЫ ====================
 @dp.message(CommandStart())
