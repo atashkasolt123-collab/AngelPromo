@@ -1,9 +1,9 @@
 # --- Основные настройки ---
 # Токен бота
-BOT_TOKEN = "8481647039:AAEa75Zou9_cUDtM7TL5uW8F9x-xLJLDVf0"
+BOT_TOKEN = "8416777739:AAHgLRxpc8CejQs4tjXXyERCjnyCB57ljo0"
 
 # Список ID администраторов
-ADMINS = [6944635614]
+ADMINS = [7313407194]
 
 # --- API Ключи (Заполните свои данные) ---
 CRYPTO_PAY_TOKEN = "531599:AAxGq5ZSfCUBnSn0gyfUCyB5tB4VKr0rmRd" # Токен от @CryptoBot (Crypto Pay API)
@@ -15,18 +15,18 @@ MIN_WITHDRAW = 1 # Минимальный вывод в 💰
 MAX_BET = 1000.0    # Максимальная ставка в 💰
 
 # --- Ссылки ---
-CHANNEL_URL = "https://t.me/PllaysBet"  # Ссылка на канал
+CHANNEL_URL = "https://t.me/SuperChanelles"  # Ссылка на канал
 SUPPORT_URL = "t.me/qwhatss"  # Ссылка на поддержку/помощь
-SITE_URL = "https://t.me/PllaysBet"       # Ссылка на сайт
+SITE_URL = "https://t.me/SuperChanelles"       # Ссылка на сайт
 CHAT_URL = "https://t.me/PllaysBet"     # Ссылка на чат
-ALERTS_CHANNEL = "@pllaysbet"        # Канал для крупных выигрышей/выводов
-REFERRAL_LINK_TEMPLATE = "t.me/pllays_Bot?start=invite_3mCfBuOatgwy" # Пример реф ссылки
+ALERTS_CHANNEL = "@superalertss"        # Канал для крупных выигрышей/выводов
+REFERRAL_LINK_TEMPLATE = "t.me/QSupeeerCas_qbot?start=invite_3mCfBuOatgwy" # Пример реф ссылки
 
 # --- Тексты ---
 TEXTS = {
     "ru": {
         "welcome": (
-            f"<b>Привет, добро пожаловать в @Pllays_Bot</b>\n\n"
+            f"<b>Привет, добро пожаловать в SuperBet</b>\n\n"
             f"<blockquote>Подписывайся на <a href='{CHANNEL_URL}'>наш канал</a> чтобы следить за новостями и конкурсами.</blockquote>"
         ),
         "profile": (
@@ -149,7 +149,7 @@ TEXTS = {
     },
     "en": {
         "welcome": (
-            f"<b>Hello, welcome to https://t.me/PllaysBet</b>\n\n"
+            f"<b>Hello, welcome to SuperBet</b>\n\n"
             f"<blockquote>Subscribe to <a href='{CHANNEL_URL}'>our channel</a> to follow news and contests.</blockquote>"
         ),
         "profile": (
