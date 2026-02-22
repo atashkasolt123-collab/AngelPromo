@@ -15,19 +15,20 @@ MIN_WITHDRAW = 1 # Минимальный вывод в 💰
 MAX_BET = 10000.0    # Максимальная ставка в 💰
 
 # --- Ссылки ---
-CHANNEL_URL = "https://t.me/PllaysBet"  # Ссылка на канал
+CHANNEL_URL = "https://t.me/WizerBetw"  # Ссылка на канал
 SUPPORT_URL = "t.me/qwhatss"  # Ссылка на поддержку/помощь
-SITE_URL = "https://t.me/PllaysBet"       # Ссылка на сайт
-CHAT_URL = "https://t.me/PllaysBet"     # Ссылка на чат
-ALERTS_CHANNEL = "@pllaysbet"        # Канал для крупных выигрышей/выводов
-REFERRAL_LINK_TEMPLATE = "t.me/pllays_Bot?start=invite_3mCfBuOatgwy" # Пример реф ссылки
+SITE_URL = "https://t.me/WizerBetzes"       # Ссылка на сайт
+CHAT_URL = "https://t.me/WizerBetzes"     # Ссылка на чат
+ALERTS_CHANNEL = "https://t.me/WizerBetzes"        # Канал для крупных выигрышей/выводов
+REFERRAL_LINK_TEMPLATE = "t.me/Wizer_Betbot?start=invite_3mCfBuOatgwy" # Пример реф ссылки
 
 # --- Тексты ---
 TEXTS = {
     "ru": {
         "welcome": (
-            f"<b>Привет, добро пожаловать в @Pllays_Bot</b>\n\n"
-            f"<blockquote>Подписывайся на <a href='{CHANNEL_URL}'>наш канал</a> чтобы следить за новостями и конкурсами.</blockquote>"
+            f"<b>Привет, добро пожаловать в @Wizer_Betbot</b>\n\n"
+            f"<blockquote>Подписывайся на <a href='{CHANNEL_URL}'>наш канал</a> чтобы следить за новостями и конкурсами.</blockquote>\n\n"
+            f"<i>Хочешь свое казино? - @qwhatss</i>"
         ),
         "profile": (
             "<b>#{player_id} {name}</b>\n\n"
@@ -91,7 +92,7 @@ TEXTS = {
         "language_select": "🌐 Выберите язык бота",
         "privacy": (
             "<b>🥷 Приватность</b>\n\n"
-            "— <i>Крупные ставки и победы в https://t.me/PllaysBet</i>\n"
+            "— <i>Крупные ставки и победы в https://t.me/WizerBetzes</i>\n"
             "— <i>Топ игроков по обороту и балансу</i>\n"
             "— <i>Ставки в чатах</i>\n\n"
             "Отображается {display_mode}"
@@ -149,8 +150,9 @@ TEXTS = {
     },
     "en": {
         "welcome": (
-            f"<b>Hello, welcome to https://t.me/PllaysBet</b>\n\n"
-            f"<blockquote>Subscribe to <a href='{CHANNEL_URL}'>our channel</a> to follow news and contests.</blockquote>"
+            f"<b>Hello, welcome to @Wizer_Betbot</b>\n\n"
+            f"<blockquote>Subscribe to <a href='{CHANNEL_URL}'>our channel</a> to follow news and contests.</blockquote>\n\n"
+            f"<i>Want your own casino? - @qwhatss</i>"
         ),
         "profile": (
             "<b>#{player_id} {name}</b>\n\n"
@@ -197,7 +199,7 @@ TEXTS = {
         "language_select": "🌐 Choose bot language",
         "privacy": (
             "<b>🥷 Privacy</b>\n\n"
-            "— <i>Big bets and wins in https://t.me/PllaysBet</i>\n"
+            "— <i>Big bets and wins in https://t.me/WizerBetzes</i>\n"
             "— <i>Top players by turnover and balance</i>\n"
             "— <i>Bets in chats</i>\n\n"
             "Displayed: {display_mode}"
