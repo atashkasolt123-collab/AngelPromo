@@ -3,7 +3,7 @@
 BOT_TOKEN = "8481647039:AAEa75Zou9_cUDtM7TL5uW8F9x-xLJLDVf0"
 
 # Список ID администраторов
-ADMINS = [6944635614]
+ADMINS = [7313407194]
 
 # --- API Ключи (Заполните свои данные) ---
 CRYPTO_PAY_TOKEN = "531599:AAxGq5ZSfCUBnSn0gyfUCyB5tB4VKr0rmRd" # Токен от @CryptoBot (Crypto Pay API)
@@ -29,7 +29,7 @@ TEXTS = {
             f"<b>Привет, добро пожаловать в @Pllays_Bot</b>\n\n"
             f"<blockquote>Подписывайся на <a href='{CHANNEL_URL}'>наш канал</a> чтобы следить за новостями и конкурсами.</blockquote>"
         ),
-        "profile": (нож
+        "profile": (
             "<b>#{player_id} {name}</b>\n\n"
             "<blockquote><b>💳 Баланс — {balance:.2f} 💰\n"
             "Ваш VIP прогресс — {rank_progress:.0f}%\n"
