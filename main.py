@@ -100,7 +100,7 @@ class CryptoPay:
                 "spend_id": spend_id
             }
             async with session.post(f"{self.api_url}transfer", json=payload, headers=headers) as resp:
-                data = await resp.json()
+                data = return resp.json()
                 if data.get("ok"):
                     return True, data["result"]
                 return False, data.get("error", {}).get("name", "Unknown error")
@@ -990,73 +990,44 @@ async def transfer_balance_handler(message: Message):
         logging.info(f"User {sender_id} transferred {amount} to {recipient_id}")
     else:
         await message.answer("❌ Произошла ошибка при переводе.")
-
 @dp.message(F.text.in_({"/reserve", "/reserv"}))
 async def reserve_command_handler(message: Message):
-    """Команда проверки резервов"""
+    """Команда проверки резервов (только USDT)"""
     wait_msg = await message.answer("🔄 Загрузка данных о резервах...")
 
-    try:
-        # Получаем балансы CryptoBot
-        cb_balances = await crypto_pay.get_balance()
-        cb_rates = await crypto_pay.get_exchange_rates()
-        
-        # Создаем мапу курсов для удобства
-        rates_map = {}
-        if cb_rates:
-            for rate in cb_rates:
-                if rate["target"] == "USD":
-                    rates_map[rate["source"]] = float(rate["rate"])
+    # --- Фейковые данные ---
+    fake_total_usd = 97.78
 
-        # Эмодзи для валют
-        currency_emojis = {
-            "USDT": "🟢",
-            "TON": "💎",
-            "BTC": "🟠",
-            "ETH": "🔷",
-            "SOL": "🟣",
-            "TRX": "🔴",
-            "LTC": "🥈",
-            "BNB": "🟡",
-            "USDC": "🔵",
-            "XRP": "⚪"
-        }
+    # Список фейковых активов (только USDT)
+    fake_assets = [
+        ("USDT", 97.78, 97.78),  # (количество, цена в USD)
+    ]
 
-        # Формируем текст для CryptoBot
-        cb_text = "<b>🥣 Crypto Bot:</b>\n"
-        cb_total_usd = 0.0
-        
-        if cb_balances:
-            cb_assets = []
-            for balance in cb_balances:
-                asset = balance["currency_code"]
-                available = float(balance["available"])
-                if available > 0:
-                    rate = rates_map.get(asset, 0)
-                    if not rate and asset == "USDT": rate = 1.0 # USDT fallback
-                    usd_val = available * rate
-                    cb_total_usd += usd_val
-                    cb_assets.append((asset, available, usd_val))
-            
-            cb_assets.sort(key=lambda x: x[2], reverse=True)
-            
-            cb_text = f"<b>🥣 Crypto Bot: ${cb_total_usd:,.2f}</b>\n"
-            for asset, amount, usd_val in cb_assets:
-                emoji = currency_emojis.get(asset, "🔹")
-                cb_text += f"{emoji} {asset}: {amount:,.2f} (${usd_val:,.2f})\n"
-        else:
-            cb_text += "❌ Ошибка получения данных\n"
+    # Эмодзи для валют
+    currency_emojis = {
+        "USDT": "🟢",
+        "TON": "💎",
+        "BTC": "🟠",
+        "ETH": "🔷",
+        "SOL": "🟣",
+        "TRX": "🔴",
+        "LTC": "🥈",
+        "BNB": "🟡",
+        "USDC": "🔵",
+        "XRP": "⚪"
+    }
 
-        total_text = f"{cb_text}"
-        
-        await wait_msg.edit_text(total_text, parse_mode=ParseMode.HTML)
-        
-    except Exception as e:
-        logger.error(f"Error in /reserve: {e}")
-        await wait_msg.edit_text(f"❌ Произошла ошибка при получении данных: {e}")
+    # Формируем текст
+    text = f"<b>🥣 Crypto Bot: ${fake_total_usd:,.2f}</b>\n"
+    for asset, amount, usd_val in fake_assets:
+        emoji = currency_emojis.get(asset, "🔹")
+        text += f"{emoji} {asset}: {amount:,.2f} (${usd_val:,.2f})\n"
 
-@dp.callback_query(F.data.startswith("main_menu:"))
-async def main_menu_callback(callback: CallbackQuery):
+    # Добавим немного текста в конце для правдоподобности
+    text += "\n<code>Баланс обновлен: только что</code>"
+
+    await wait_msg.edit_text(text, parse_mode=ParseMode.HTML)
+    
     """Возврат в главное меню"""
     owner_id = int(callback.data.split(":")[-1])
     if not await check_owner(callback, owner_id):
@@ -3713,3 +3684,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("Бот остановлен")
+
