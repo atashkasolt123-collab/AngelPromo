@@ -1,6 +1,6 @@
 # --- Основные настройки ---
 # Токен бота
-BOT_TOKEN = "8481647039:AAEa75Zou9_cUDtM7TL5uW8F9x-xLJLDVf0"
+BOT_TOKEN = "7791033263:AAGRXmwatHev9nTr4XPngaZL9jsZ26VJF1E"
 
 # Список ID администраторов
 ADMINS = [7313407194]
